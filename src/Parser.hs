@@ -25,8 +25,12 @@ where
 import           Control.Monad
 import           Control.Applicative
 import           Data.Maybe
+import           Control.Monad.Fail
 
 newtype Parser a = Parser (String -> Maybe (a, String))
+
+instance MonadFail Parser where
+    fail s = empty
 
 instance Functor Parser where
     fmap :: (a -> b) -> Parser a -> Parser b
@@ -37,15 +41,6 @@ instance Applicative Parser where
     (Parser mf) <*> (Parser mx) =
         Parser $ \s ->
             mf s >>= \(f, s') -> mx s' >>= \(x, s'') -> pure (f x, s'')
-
-{- Do notation implementation of (<*>) operator:
-
-     (Parser mf) <*> (Parser mx)  = Parser $ \s ->
-        (f, s') <- mf s
-        (x, s'') <- mx 's
-        return (f x, s'')
-
--}
 
 instance Monad Parser where
     return a = Parser $ \s -> return (a, s)
@@ -132,11 +127,3 @@ manyOf = many . oneOf
 
 manyNoneOf :: String -> Parser String
 manyNoneOf = many . noneOf
-
--- chainl1 :: Parser a -> Parser (a -> a -> a) -> Parser a
--- chainl1 p op = p >>= rest
---     where
---         rest a = (do
---             f <- op
---             b <- p
---             rest (f a b)) <|> pure a
