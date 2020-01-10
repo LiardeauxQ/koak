@@ -10,38 +10,61 @@ import           Expression
 
 stmt = many kdefs
 
-kdefs = (string "def" >> defs >> char ';') <|> (expressions >> char ';')
+kdefs :: Parser ()
+kdefs =
+    (string "def" *> defs <* char ';')
+        <|> (expressions >> char ';' *> return ())
 
-defs = prototype >> expressions
+defs :: Parser ()
+defs = do
+    prototype
+    expressions
+    return ()
 
-prototype =
-    (   (string "unary" >> maybe empty (optional decimalConst))
-        <|> (string "binary" >> maybe empty (optional decimalConst))
-        <|> identifier
-        )
-        prototypeArgs
+prototype :: Parser ()
+prototype = do
+    s <- prototypeFunc
+    prototypeArgs
+    return ()
 
-prototypeArgs :: Parser Expr
+prototypeFunc :: Parser ()
+prototypeFunc =
+    return
+        $   (do
+                string "unary"
+                optional decimalConst
+            )
+        <|> (do
+                string "binary"
+                optional decimalConst
+            )
+        <|> Just
+        .   Var
+        <$> identifier
+
+
+prototypeArgs :: Parser ()
 prototypeArgs = do
-    parens $ many
+    types <- parens $ many
         (do
             id <- identifier
             char ':'
             t <- typ
-            return $ TypeDeclaration id t
+            return $ id ++ ":" ++ t
         )
     char ':'
     retType <- typ
+    return ()
 
 typ :: Parser String
 typ = string "int" <|> string "double" <|> string "void"
 
-expression :: Parser Expr
+expressions :: Parser Expr
 expressions =
-    forExpr
-        <|> ifExpr
-        <|> whileExpr
-        <|> (expression >> (many (char ':' >> expression)))
+    forExpr <|> ifExpr <|> whileExpr <|> (expression <* manyExpressions)
+
+manyExpressions :: Parser [Expr]
+manyExpressions = many (char ':' *> expression)
 
 forExpr :: Parser Expr
 forExpr = do
@@ -65,8 +88,8 @@ ifExpr = do
     expr <- expression
     string "then"
     expr1 <- expressions
-    exprs <- optional (string "else" >> expressions)
-    return $ If expr expr1 exprs
+    expr2 <- optional (string "else" >> expressions)
+    return $ If expr expr1 expr2
 
 whileExpr :: Parser Expr
 whileExpr = do
@@ -76,8 +99,14 @@ whileExpr = do
     expr1 <- expressions
     return $ While expr expr1
 
-binop = oneOf "+-/*%<>=" <|> string "^" <|> string "$" -- Change with operators
-unop = oneOf "-!"
+binop :: Parser (Expr -> Expr -> Expr)
+binop =
+    (oneOf "+-/*%<>=" >>= \c -> return $ BinaryOp (c : []))
+        <|> (string "==" >>= return . BinaryOp)
+        <|> (string "!=" >>= return . BinaryOp)
+
+unop :: Parser (Expr -> Expr)
+unop = oneOf "-!" >>= return . UnaryOp . (: [])
 
 expression :: Parser Expr
 expression = do
@@ -99,10 +128,18 @@ postfix = do
     c <- optional callExpr
     return $ Identifier "postfix"
 
-callExpr = parens $ optional (expression >> many (char ',' >> expression))
+callExpr :: Parser Expr
+callExpr = parens $ callParamExpr
+
+callParamExpr :: Parser Expr
+callParamExpr = do
+    optional $ do
+        e      <- expression
+        others <- many (char ',' >> expression)
+        Call e others
 
 primary :: Parser Expr
-primary = (Identifier <$> identifier) <|> literal <|> parens expressions
+primary = (Var <$> identifier) <|> literal <|> parens expressions
 
 identifier :: Parser String
 identifier = do
@@ -110,22 +147,23 @@ identifier = do
     next  <- many (letter <|> digit)
     return (first : next)
 
-dot = char '.' >> noneOf "."
+dot :: Parser Char
+dot = char '.' <* noneOf "."
 
 decimalConst :: Parser Expr
-decimalConst = Number . read <$> many1 digit
+decimalConst = Int . read <$> many1 digit
 
 doubleConst :: Parser Expr
 doubleConst =
     do
-            Number f <- decimalConst
+            Int f <- decimalConst
             dot
             s <- many digit
-            return $ Floating $ read $ (show f) ++ "." ++ s
+            return $ Float $ read $ (show f) ++ "." ++ s
         <|> do
                 dot
-                Number v <- decimalConst
-                return $ Floating $ read $ "0." ++ (show v)
+                Int v <- decimalConst
+                return $ Float $ read $ "0." ++ (show v)
 
 
 literal :: Parser Expr
