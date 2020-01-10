@@ -2,6 +2,7 @@ module Expression
     ( Expr(..)
     , Type(..)
     , Identifier
+    , Variable(..)
     , getOperatorPrecendence
     )
 where
@@ -15,15 +16,18 @@ data Type = Integer
           | Void
           deriving(Show)
 
+data Variable = Variable { name :: String, typeName :: Maybe Type } deriving(Show)
+
 data Expr = Int Integer
           | Float Double
-          | Var String (Maybe Type)
-          | If Expr Expr (Maybe Expr)
-          | While Expr Expr
-          | For Identifier Expr Identifier Expr Expr Expr
+          | Var Variable
+          | If { condition :: Expr, body :: Expr, elseBody :: Maybe Expr }
+          | While { condition :: Expr, body :: Expr }
+          | For { iterator :: Identifier, beginValue :: Expr, iterator2 :: Identifier, endValue :: Expr, step :: Expr, body :: Expr }
           | UnaryOp Identifier Expr
           | BinaryOp Identifier Expr Expr
-          | Function Identifier [Identifier] Expr (Maybe Type)
+          | Function { functionName :: Identifier, args :: [Variable], body :: Expr, returnTypeName :: Maybe Type }
+          | Call Identifier [Expr]
 
 instance Show Expr where
     show (Int   a  ) = show a
@@ -34,9 +38,9 @@ instance Show Expr where
         show a ++ show b ++ show c ++ show d ++ show e ++ show f
     show (UnaryOp op b   ) = show op ++ show b
     show (BinaryOp op b c) = show b ++ " " ++ show op ++ " " ++ show c
-    show (Function a b c t) =
-        show a ++ "(" ++ show b ++ ") -> " ++ show t ++ " {" ++ show c ++ "}"
-    show (Var name t) = show name ++ ": " ++ show t
+    show Function { functionName = a, args = b, body = c, returnTypeName = d }
+        = show a ++ "(" ++ show b ++ ") -> " ++ show d ++ " {" ++ show c ++ "}"
+    show (Var Variable { name = x, typeName = y }) = show x ++ ": " ++ show y
 
 
 type OperatorPrecendence = (String, Int)

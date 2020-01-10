@@ -119,7 +119,7 @@ unary =
     do
             op <- unop
             un <- unary
-            return $ Identifier "op + unary"
+            return $ op un
         <|> postfix
 
 postfix :: Parser Expr
@@ -139,7 +139,13 @@ callParamExpr = do
         Call e others
 
 primary :: Parser Expr
-primary = (Var <$> identifier) <|> literal <|> parens expressions
+primary =
+    (do
+            value <- identifier
+            return $ Var $ Variable { name = value, typeName = Nothing }
+        )
+        <|> literal
+        <|> parens expressions
 
 identifier :: Parser String
 identifier = do
