@@ -1,6 +1,8 @@
 module Main where
 
-import ExprParser
+import           KoakParser
+import           Expression
 
 main :: IO ()
 main = putStrLn "Hello, World!"
+
