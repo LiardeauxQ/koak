@@ -1,6 +1,5 @@
-
 module State
-    ( State(..)
+    ( StateT(..)
     , state
     , get
     , put
@@ -11,37 +10,37 @@ where
 import           Control.Monad
 import           Control.Applicative
 
-newtype State s m a = State { runState :: s -> m (a, s) }
+newtype StateT s m a = StateT { runState :: s -> m (a, s) }
 
-instance (Monad m) => Functor (State s m) where
+instance (Monad m) => Functor (StateT s m) where
     fmap = Control.Monad.liftM
 
-instance (Monad m) => Applicative (State s m) where
+instance (Monad m) => Applicative (StateT s m) where
     pure  = return
     (<*>) = Control.Monad.ap
 
-instance (Monad m) => Monad (State s m) where
-    return a = State $ \s -> return (a, s)
-    m >>= k = State $ \s -> do
+instance (Monad m) => Monad (StateT s m) where
+    return a = StateT $ \s -> return (a, s)
+    m >>= k = StateT $ \s -> do
         (a, s') <- runState m s
         runState (k a) s'
 
-instance (Alternative m, Monad m) => Alternative (State s m) where
-    empty = State $ const empty
-    (State a) <|> (State e) = State $ \s -> a s <|> e s
+instance (Alternative m, Monad m) => Alternative (StateT s m) where
+    empty = StateT $ const empty
+    (StateT a) <|> (StateT e) = StateT $ \s -> a s <|> e s
 
-state :: (Monad m) => (s -> (a, s)) -> State s m a
+state :: (Monad m) => (s -> (a, s)) -> StateT s m a
 state f = do
     s <- get
     let ~(a, s') = f s
     put s'
     return a
 
-get :: (Monad m) => State s m s
-get = State $ \s -> return (s, s)
+get :: (Monad m) => StateT s m s
+get = StateT $ \s -> return (s, s)
 
-put :: (Monad m) => s -> State s m ()
-put s = State $ \_ -> return ((), s)
+put :: (Monad m) => s -> StateT s m ()
+put s = StateT $ \_ -> return ((), s)
 
-modify :: (Monad m) => (s -> s) -> State s m ()
+modify :: (Monad m) => (s -> s) -> StateT s m ()
 modify f = state (\s -> ((), f s))

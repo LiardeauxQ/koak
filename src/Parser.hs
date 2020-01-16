@@ -3,7 +3,6 @@ module Parser
     ( Parser(..)
     , runParser
     , manyNoneOf
-    , evalParser
     , sepBy1
     , sepBy
     , letter
@@ -22,33 +21,52 @@ module Parser
     )
 where
 
+import           State
+import           Data.Either
 import           Control.Monad
 import           Control.Applicative
 import           Data.Maybe
 import           Control.Monad.Fail
+import           Data.Bifunctor
 
-newtype Parser a = Parser (String -> Maybe (a, String))
+data ParseError = ParseError { line :: Int
+                             , column :: Int
+                             , message :: String
+                             }
+
+-- Wrapping StateT with a newtype.
+newtype Parser a = Parser { unParser :: StateT String (Either ParseError) a }
+-- To implement monad on Parser we need to unwrap the parser with unParser
+-- then use underlying StateT implementation.
 
 instance MonadFail Parser where
-    fail s = empty
+    fail s = Parser $ StateT $ \c ->
+        Left $ ParseError { line = 0, column = 0, message = s }
 
 instance Functor Parser where
-    fmap :: (a -> b) -> Parser a -> Parser b
-    fmap f p = Parser $ fmap (\(a, s') -> (f a, s')) . runParser p
+    fmap f p = Parser $ f <$> unParser p
 
 instance Applicative Parser where
-    pure a = Parser $ \s -> Just (a, s)
-    (Parser mf) <*> (Parser mx) =
-        Parser $ \s ->
-            mf s >>= \(f, s') -> mx s' >>= \(x, s'') -> pure (f x, s'')
+    pure a = Parser $ pure a
+    f <*> a = Parser $ unParser f <*> unParser a
 
 instance Monad Parser where
-    return a = Parser $ \s -> return (a, s)
-    a >>= f = Parser $ \s -> runParser a s >>= \(a', s') -> runParser (f a') s'
+    return a = Parser $ return a
+    a >>= f = Parser $ StateT $ \s -> do
+        (a', s') <- runParser a s
+        runParser (f a') s'
 
 instance Alternative Parser where
-    empty = Parser $ const Nothing
-    Parser x <|> Parser y = Parser $ \s -> x s <|> y s
+    empty = Parser $ StateT $ \s ->
+        Left $ ParseError { line = 0, column = 0, message = "Empty" }
+    a <|> b = Parser $ StateT $ \s -> case (runParser a s, runParser b s) of
+        (Left  x, Left y ) -> Left x
+        (Right x, Left y ) -> Right x
+        (Left  x, Right y) -> Right y
+        (Right x, Right y) -> Right x
+
+runParser :: Parser a -> String -> Either ParseError (a, String)
+runParser = runState . unParser
 
 many1 :: Parser a -> Parser [a]
 many1 p = do
@@ -56,19 +74,10 @@ many1 p = do
     xs <- many p
     return (x : xs)
 
-runParser :: Parser a -> String -> Maybe (a, String)
-runParser (Parser a) = a
-
-evalParser :: Parser a -> String -> Either String a
-evalParser p s = case runParser p s of
-    Just (a, "") -> Right a
-    Just (a, s ) -> Left $ "Cannot parse not empty:" ++ s ++ "."
-    Nothing      -> Left "invalid syntax"
-
 anyChar :: Parser Char
-anyChar = Parser $ \s -> case s of
-    ""       -> empty
-    (c : cs) -> return (c, cs)
+anyChar = Parser $ StateT $ \s -> case s of
+    ""       -> Left $ ParseError { line = 0, column = 0, message = "Empty" }
+    (c : cs) -> Right $ (c, cs)
 
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy pred = do
@@ -80,24 +89,29 @@ char :: Char -> Parser Char
 char = satisfy . (==)
 
 string :: String -> Parser String
-string []       = pure []
-string (c : cs) = (:) <$> char c <*> string cs
+string = foldr (\c -> (<*>) ((:) <$> char c)) (pure [])
 
 noneOf :: String -> Parser Char
-noneOf cs = Parser $ \s -> case s of
-    (x : xs) -> if x `elem` cs then Nothing else Just (x, xs)
-    []       -> Nothing
+noneOf cs = Parser $ StateT $ \s -> case s of
+    (x : xs) -> if x `elem` cs
+        then Left $ ParseError { line = 0, column = 0, message = "Empty" }
+        else Right (x, xs)
+    [] -> Left $ ParseError { line = 0, column = 0, message = "Empty" }
 
 oneOf :: String -> Parser Char
-oneOf cs = Parser $ \s -> case s of
-    (x : xs) -> if x `elem` cs then Just (x, xs) else Nothing
-    []       -> Nothing
+oneOf cs = Parser $ StateT $ \s -> case s of
+    (x : xs) -> if x `elem` cs
+        then Right (x, xs)
+        else Left $ ParseError { line = 0, column = 0, message = "Empty" }
+    [] -> Left $ ParseError { line = 0, column = 0, message = "Empty" }
 
 parens :: Parser a -> Parser a
 parens = between (char '(') (char ')')
 
+sepBy :: Parser a -> Parser a -> Parser [a]
 sepBy p sep = sepBy1 p sep <|> return empty
 
+sepBy1 :: Parser a -> Parser a -> Parser [a]
 sepBy1 p sep = do
     x  <- p
     xs <- many (sep >> p)
