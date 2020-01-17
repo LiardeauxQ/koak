@@ -6,6 +6,7 @@ import           Test.Hspec
 import           Control.Exception              ( evaluate )
 
 
+runKoakParser :: String -> Either ParseError ([KoakExpression], String)
 runKoakParser = runParser koak
 
 functionDefinitionKoak = "def test(x: double): double x + 2.0;"
@@ -17,22 +18,27 @@ main = hspec $ do
     describe "Function definition." $ do
         it "Parse a function definition." $ do
             let value = runKoakParser functionDefinitionKoak
-            value
-                `shouldBe` (Right
-                               (Def
-                                   (DefineFunction
-                                       "test"
-                                       [Variable "x" (Just Double)]
-                                       (Just Double)
-                                       (BinaryOp "+" (Var "x") (Float 2.0))
-                                   )
-                               )
-                           )
+            value `shouldBe` Right
+                ( [ (Def
+                        (DefineFunction
+                            "test"
+                            [Variable "x" (Just Double)]
+                            (Just Double)
+                            (Exprs [(BinaryOp "+" (Var "x") (Float 2.0))])
+                        )
+                    )
+                  ]
+                , ""
+                )
+
+
 
         it "Parse a function call." $ do
             let value = runKoakParser functionCallKoak
-            value `shouldBe` (Right (Call "test" [Float 5.0]))
+            value `shouldBe` Right
+                ([Expr (Exprs [(Call "test" [Float 5.0])])], "")
 
         it "Parse an assignement of an int." $ do
             let value = runKoakParser assignementKoak
-            value `shouldBe` (Right (BinaryOp "=" (Var "y") (Int 5)))
+            value `shouldBe` Right
+                ([Expr (Exprs [(BinaryOp "=" (Var "y") (Int 5))])], "")

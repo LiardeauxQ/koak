@@ -1,6 +1,8 @@
 {-# LANGUAGE InstanceSigs #-}
+
 module Parser
     ( Parser(..)
+    , ParseError(..)
     , runParser
     , manyNoneOf
     , sepBy1
@@ -32,7 +34,7 @@ import           Data.Bifunctor
 data ParseError = ParseError { line :: Int
                              , column :: Int
                              , message :: String
-                             }
+                             } deriving(Show, Eq)
 
 -- Wrapping StateT with a newtype.
 newtype Parser a = Parser { unParser :: StateT String (Either ParseError) a }
