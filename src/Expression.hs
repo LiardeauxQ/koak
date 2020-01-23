@@ -9,7 +9,7 @@ data KType = TInteger
            | TVoid
            deriving(Show, Eq, Ord)
 
-data KDefs = Def String [VariableDef] (Maybe KType) KExprs
+data KDefs = Def Name [VariableDef] (Maybe KType) KExprs
            | Expressions KExprs
            deriving(Show, Eq, Ord)
 

@@ -8,15 +8,12 @@ import           Control.Monad
 import           Control.Applicative
 import           Expression
 
-koak :: Parser [KoakExpression]
+koak :: Parser [KDefs]
 koak = return
-    [ (Def
-          (DefineFunction "test"
-                          [Variable "x" (Just Double)]
-                          (Just Double)
-                          (Exprs [(BinaryOp "+" (Var "x") (Float 2.0))])
-          )
-      )
+    [ Def "test"
+           [VariableDef "x" (Just TDouble)]
+           (Just TDouble)
+           (Expression [BinaryOp "+" (Identifier "x") (Float 2.0)])
     ]
 
 -- koak :: Parser ()
