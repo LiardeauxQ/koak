@@ -14,14 +14,20 @@ functionCallKoak = "test(5.0);"
 assignementKoak = "y = 5;"
 complexeFunctionDefinitionKoak =
     "def fibi(x)\n\
-        \var a = 1\n\
-        \var b = 1\n\
-        \var c = 0\n\
-        \(for i = 3, i < x, 1.0 in\n\
-        \  c = (a + b) :\n\
-        \  a = b :\n\
-        \  b = c) :\n\
-        \b;\n"
+    \    var a = 1\n\
+    \    var b = 1\n\
+    \    var c = 0\n\
+    \    (for i = 3, i < x, 1.0 in\n\
+    \      c = (a + b) :\n\
+    \      a = b :\n\
+    \      b = c) :\n\
+    \    b;\n"
+functionWithIf =
+    "def fib(x)\n\
+    \    if (x < 3) then\n\
+    \        1\n\
+    \    else\n\
+    \        fib(x-1)+fib(x-2);\n"
 
 main :: IO ()
 main = hspec $ describe "Function definition." $ do
@@ -95,11 +101,9 @@ main = hspec $ describe "Function definition." $ do
                                     ]
                                 )
                             )
+                        , Identifier "b"
                         ]
                     )
               ]
             , ""
             )
-
-
-
