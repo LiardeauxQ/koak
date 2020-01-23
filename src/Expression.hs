@@ -2,36 +2,83 @@ module Expression where
 
 import           Data.Maybe
 
-data KoakType = Integer
-              | Double
-              | Void
-              deriving(Show, Eq, Ord)
+type Name = String
 
-data KoakExpression = Def Defining
-                    | Expr Expressions
-                    deriving(Show, Eq, Ord)
+data KType = TInteger
+           | TDouble
+           | TVoid
+           deriving(Show, Eq, Ord)
 
-data Variable = Variable String (Maybe KoakType) deriving(Show, Eq, Ord)
+data KDefs = Def String [VariableDef] (Maybe KType) KExprs
+           | Expressions KExprs
+           deriving(Show, Eq, Ord)
 
-data Defining = DefineFunction String [Variable] (Maybe KoakType) Expressions
-              | DefineExtern String [Variable] (Maybe KoakType) Expressions
-              -- | DefineBinaryOp Operator Expression Expression
-              -- | DefineUnaryOp Operator Expression
-              deriving(Show, Eq, Ord)
+data VariableDef = VariableDef Name (Maybe KType) deriving(Show, Eq, Ord)
 
-data Expression = Int Integer
-                | Float Double
-                | BinaryOp String Expression Expression
-                | UnaryOp String Expression
-                | Var String
-                | Call String [Expression]
-                deriving(Show, Eq, Ord)
+data KExpr = Int Integer
+           | Float Double
+           | BinaryOp Name KExpr KExpr
+           | UnaryOp Name KExpr
+           | Identifier Name
+           | Call KExpr [KExpr]
+           | Primary KExprs
+           deriving(Show, Eq, Ord)
 
-data Expressions = For String Expression Expression Expression Expressions
-                 | While Expression Expressions
-                 | If Expression Expressions
-                 | Exprs [Expression]
-                 deriving(Show, Eq, Ord)
+data KExprs = For KExpr KExpr KExpr KExpr KExpr KExprs
+            | If KExpr KExprs (Maybe KExprs)
+            | While KExpr KExprs
+            | Expression [KExpr]
+            deriving(Show, Eq, Ord)
+
+-- ```
+-- c: double = 2.0
+-- c = 2.0
+-- def mandelhelp(xmin xmax xstep ymin ymax ystep)
+--       for y = ymin, y < ymax, ystep in (
+--           (for x = xmin, x < xmax, xstep in
+--               printdensity(mandelconverge(x,y)))
+--           : putchard(10))
+-- ```
+function = Def
+    "madelhelp"
+    [ VariableDef "xmin"  Nothing
+    , VariableDef "xmax"  Nothing
+    , VariableDef "xmax"  Nothing
+    , VariableDef "xstep" Nothing
+    , VariableDef "ymax"  Nothing
+    , VariableDef "ystep" Nothing
+    ]
+    Nothing
+    (For
+        (Identifier "y")
+        (Identifier "ymin")
+        (Identifier "y")
+        (Identifier "ymax")
+        (Identifier "ystep")
+        (Expression
+            [ Primary
+                  (For
+                      (Identifier "x")
+                      (Identifier "xmin")
+                      (Identifier "x")
+                      (Identifier "xmax")
+                      (Identifier "xstep")
+                      (Expression
+                          [ Call
+                              (Identifier "printdensity")
+                              [ Call (Identifier "mandelconverge")
+                                     [Identifier "x", Identifier "y"]
+                              ]
+                          , Call (Identifier "putchar") [Int 10]
+                          ]
+                      )
+                  )
+            ]
+        )
+    )
+
+
+
 
 type OperatorPrecendence = (String, Int)
 
