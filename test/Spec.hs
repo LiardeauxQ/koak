@@ -1,7 +1,7 @@
 
-import           KoakParser
+import           KParser
 import           Parser
-import           Expression
+import           AST
 import           Test.Hspec
 import           Control.Exception              ( evaluate )
 import           Debug.Trace
@@ -28,10 +28,16 @@ functionWithIf =
     \        1\n\
     \    else\n\
     \        fib(x-1)+fib(x-2);\n"
+functionWithComplexeFor =
+    "def mandelhelp(xmin xmax xstep ymin ymax ystep)\n\
+    \      for y = ymin, y < ymax, ystep in (\n\
+    \          (for x = xmin, x < xmax, xstep in\n\
+    \              printdensity(mandelconverge(x,y)))\n\
+    \          : putchard(10))\n"
 
 main :: IO ()
 main = hspec $ describe "Function definition." $ do
-    it "Parse a function definition." $ do
+    it "Function definition." $ do
         let value = runKoakParser functionDefinitionKoak
         value `shouldBe` Right
             ( [ Def "test"
@@ -42,7 +48,7 @@ main = hspec $ describe "Function definition." $ do
             , ""
             )
 
-    it "Parse a function call." $ do
+    it "Function call." $ do
         let value = runKoakParser functionCallKoak
         value
             `shouldBe` Right
@@ -54,7 +60,7 @@ main = hspec $ describe "Function definition." $ do
                            , ""
                            )
 
-    it "Parse an assignement of an int." $ do
+    it "Assignement of an int." $ do
         let value = runKoakParser assignementKoak
         value
             `shouldBe` Right
@@ -66,7 +72,7 @@ main = hspec $ describe "Function definition." $ do
                            , ""
                            )
 
-    it "Parse complexe function definition koak." $ do
+    it "Complexe function definition koak." $ do
         let value = runKoakParser complexeFunctionDefinitionKoak
         value `shouldBe` Right
             ( [ Def
@@ -107,3 +113,88 @@ main = hspec $ describe "Function definition." $ do
               ]
             , ""
             )
+
+    it "Function with if." $ do
+        let value = runKoakParser functionWithIf
+        value `shouldBe` Right
+            ( [ Def
+                    "fib"
+                    [VariableDef "x" Nothing]
+                    Nothing
+                    (If
+                        (BinaryOp "<" (Identifier "x") (Int 3))
+                        (Expression [Int 3])
+                        (Just
+                            (Expression
+                                [ BinaryOp
+                                      "+"
+                                      (Call
+                                          (Identifier "fib")
+                                          [ BinaryOp "-"
+                                                     (Identifier "x")
+                                                     (Int 1)
+                                          ]
+                                      )
+                                      (Call
+                                          (Identifier "fib")
+                                          [ BinaryOp "-"
+                                                     (Identifier "x")
+                                                     (Int 2)
+                                          ]
+                                      )
+                                ]
+                            )
+                        )
+                    )
+              ]
+            , ""
+            )
+
+    it "Function with complexe for." $ do
+        let value = runKoakParser functionWithComplexeFor
+        value `shouldBe` Right
+            ( [ Def
+                    "madelhelp"
+                    [ VariableDef "xmin"  Nothing
+                    , VariableDef "xmax"  Nothing
+                    , VariableDef "xmax"  Nothing
+                    , VariableDef "xstep" Nothing
+                    , VariableDef "ymax"  Nothing
+                    , VariableDef "ystep" Nothing
+                    ]
+                    Nothing
+                    (For
+                        (Identifier "y")
+                        (Identifier "ymin")
+                        (Identifier "y")
+                        (Identifier "ymax")
+                        (Identifier "ystep")
+                        (Expression
+                            [ Primary
+                                  (For
+                                      (Identifier "x")
+                                      (Identifier "xmin")
+                                      (Identifier "x")
+                                      (Identifier "xmax")
+                                      (Identifier "xstep")
+                                      (Expression
+                                          [ Call
+                                              (Identifier "printdensity")
+                                              [ Call
+                                                    (Identifier "mandelconverge"
+                                                    )
+                                                    [ Identifier "x"
+                                                    , Identifier "y"
+                                                    ]
+                                              ]
+                                          , Call (Identifier "putchar") [Int 10]
+                                          ]
+                                      )
+                                  )
+                            ]
+                        )
+                    )
+              ]
+            , ""
+            )
+

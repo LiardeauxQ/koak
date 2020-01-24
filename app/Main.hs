@@ -1,7 +1,7 @@
 module Main where
 
-import           KoakParser
-import           Expression
+import           KParser
+import           AST
 
 main :: IO ()
 main = putStrLn "Hello, World!"
