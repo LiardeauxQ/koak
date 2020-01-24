@@ -9,6 +9,7 @@ module Parser
     , sepBy
     , letter
     , char
+    , chainl
     , chainl1
     , string
     , anyChar
