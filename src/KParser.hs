@@ -1,4 +1,4 @@
-module KoakParser
+module KParser
     ( koak
     )
 where
@@ -6,7 +6,7 @@ where
 import           Parser
 import           Control.Monad
 import           Control.Applicative
-import           Expression
+import           AST
 
 koak :: Parser [KDefs]
 koak = return
