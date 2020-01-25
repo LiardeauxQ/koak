@@ -93,7 +93,7 @@ unop :: Parser (KExpr -> KExpr)
 unop = UnaryOp . (: []) <$> oneOf "-!"
 
 expression :: Parser KExpr
-expression = unary `chainl1` (binop (unary <|> expression))
+expression = return $ Int 4 -- unary `chainl1` (binop (unary <|> expression))
 
 unary :: Parser KExpr
 unary = (unop <*> unary) <|> postfix
