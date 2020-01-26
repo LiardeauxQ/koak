@@ -1,5 +1,27 @@
 module KParser
     ( koak
+    , kdefs
+    , defs
+    , prototype
+    , prototypeFunc
+    , prototypeArgs
+    , ktype
+    , expressions
+    , forExpr
+    , ifExpr
+    , whileExpr
+    , binop
+    , unop
+    , expression
+    , unary
+    , postfix
+    , callExpr
+    , primary
+    , identifier
+    , dot
+    , decimalConst
+    , doubleConst
+    , literal
     )
 where
 
@@ -50,7 +72,7 @@ expressions =
     forExpr
         <|> ifExpr
         <|> whileExpr
-        <|> Expression <$> ((:) <$> expression <*> (many (char ':' *> expression)))
+        <|> Expression <$> ((:) <$> expression <*> many (char ':' *> expression))
 
 forExpr :: Parser KExprs
 forExpr = do
@@ -93,7 +115,7 @@ unop :: Parser (KExpr -> KExpr)
 unop = UnaryOp . (: []) <$> oneOf "-!"
 
 expression :: Parser KExpr
-expression = unary `chainl1` (binop (unary <|> expression))
+expression = chainl1 (unary <|> expression) binop
 
 unary :: Parser KExpr
 unary = (unop <*> unary) <|> postfix
@@ -107,7 +129,7 @@ postfix = do
         Nothing -> p
 
 callExpr :: Parser [KExpr]
-callExpr = parens ((:) <$> expression <*> many (char ',' *> expression))
+callExpr = parens $ (:) <$> expression <*> many (char ',' *> expression)
 
 primary :: Parser KExpr
 primary =

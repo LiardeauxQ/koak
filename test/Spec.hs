@@ -36,165 +36,184 @@ functionWithComplexeFor =
     \          : putchard(10))\n"
 
 main :: IO ()
-main = hspec $ describe "Function definition." $ do
-    it "Function definition." $ do
-        let value = runKoakParser functionDefinitionKoak
+main = hspec $ do
+
+    describe "Parse if Expr" $ it "Function with complexe for." $ do
+        let value = runParser ifExpr "if (x < 2) then 2 else 3"
         value `shouldBe` Right
-            ( [ Def "test"
-                    [VariableDef "x" (Just TDouble)]
-                    (Just TDouble)
-                    (Expression [BinaryOp "+" (Identifier "x") (Float 2.0)])
-              ]
+            ( If (BinaryOp "<" (Identifier "x") (Int 2))
+                 (Expression [Int 2])
+                 (Just (Expression [Int 3]))
             , ""
             )
 
-    it "Function call." $ do
-        let value = runKoakParser functionCallKoak
-        value
-            `shouldBe` Right
-                           ( [ Expressions
-                                   (Expression
-                                       [Call (Identifier "test") [Float 5.0]]
-                                   )
-                             ]
-                           , ""
-                           )
+    describe "Function definition." $ do
+        it "Function definition." $ do
+            let value = runKoakParser functionDefinitionKoak
+            value `shouldBe` Right
+                ( [ Def
+                        "test"
+                        [VariableDef "x" (Just TDouble)]
+                        (Just TDouble)
+                        (Expression [BinaryOp "+" (Identifier "x") (Float 2.0)])
+                  ]
+                , ""
+                )
 
-    it "Assignement of an int." $ do
-        let value = runKoakParser assignementKoak
-        value
-            `shouldBe` Right
-                           ( [ Expressions
-                                   (Expression
-                                       [BinaryOp "=" (Identifier "y") (Int 5)]
-                                   )
-                             ]
-                           , ""
-                           )
+        it "Function call." $ do
+            let value = runKoakParser functionCallKoak
+            value
+                `shouldBe` Right
+                               ( [ Expressions
+                                       (Expression
+                                           [ Call (Identifier "test")
+                                                  [Float 5.0]
+                                           ]
+                                       )
+                                 ]
+                               , ""
+                               )
 
-    it "Complexe function definition koak." $ do
-        let value = runKoakParser complexeFunctionDefinitionKoak
-        value `shouldBe` Right
-            ( [ Def
-                    "fibi"
-                    [VariableDef "x" Nothing]
-                    Nothing
-                    (Expression
-                        [ BinaryOp "=" (Identifier "a") (Int 1)
-                        , BinaryOp "=" (Identifier "b") (Int 1)
-                        , BinaryOp "=" (Identifier "c") (Int 0)
-                        , Primary
-                            (For
-                                (Identifier "i")
-                                (Int 3)
-                                (Identifier "i")
-                                (Identifier "x")
-                                (Float 1.0)
+        it "Assignement of an int." $ do
+            let value = runKoakParser assignementKoak
+            value
+                `shouldBe` Right
+                               ( [ Expressions
+                                       (Expression
+                                           [ BinaryOp "="
+                                                      (Identifier "y")
+                                                      (Int 5)
+                                           ]
+                                       )
+                                 ]
+                               , ""
+                               )
+
+        it "Complexe function definition koak." $ do
+            let value = runKoakParser complexeFunctionDefinitionKoak
+            value `shouldBe` Right
+                ( [ Def
+                        "fibi"
+                        [VariableDef "x" Nothing]
+                        Nothing
+                        (Expression
+                            [ BinaryOp "=" (Identifier "a") (Int 1)
+                            , BinaryOp "=" (Identifier "b") (Int 1)
+                            , BinaryOp "=" (Identifier "c") (Int 0)
+                            , Primary
+                                (For
+                                    (Identifier "i")
+                                    (Int 3)
+                                    (Identifier "i")
+                                    (Identifier "x")
+                                    (Float 1.0)
+                                    (Expression
+                                        [ BinaryOp
+                                            "="
+                                            (Identifier "c")
+                                            (BinaryOp "+"
+                                                      (Identifier "a")
+                                                      (Identifier "b")
+                                            )
+                                        , BinaryOp "="
+                                                   (Identifier "a")
+                                                   (Identifier "b")
+                                        , BinaryOp "="
+                                                   (Identifier "b")
+                                                   (Identifier "c")
+                                        ]
+                                    )
+                                )
+                            , Identifier "b"
+                            ]
+                        )
+                  ]
+                , ""
+                )
+
+        it "Function with if." $ do
+            let value = runKoakParser functionWithIf
+            value `shouldBe` Right
+                ( [ Def
+                        "fib"
+                        [VariableDef "x" Nothing]
+                        Nothing
+                        (If
+                            (BinaryOp "<" (Identifier "x") (Int 3))
+                            (Expression [Int 3])
+                            (Just
                                 (Expression
                                     [ BinaryOp
-                                        "="
-                                        (Identifier "c")
-                                        (BinaryOp "+"
-                                                  (Identifier "a")
-                                                  (Identifier "b")
-                                        )
-                                    , BinaryOp "="
-                                               (Identifier "a")
-                                               (Identifier "b")
-                                    , BinaryOp "="
-                                               (Identifier "b")
-                                               (Identifier "c")
+                                          "+"
+                                          (Call
+                                              (Identifier "fib")
+                                              [ BinaryOp "-"
+                                                         (Identifier "x")
+                                                         (Int 1)
+                                              ]
+                                          )
+                                          (Call
+                                              (Identifier "fib")
+                                              [ BinaryOp "-"
+                                                         (Identifier "x")
+                                                         (Int 2)
+                                              ]
+                                          )
                                     ]
                                 )
                             )
-                        , Identifier "b"
-                        ]
-                    )
-              ]
-            , ""
-            )
+                        )
+                  ]
+                , ""
+                )
 
-    it "Function with if." $ do
-        let value = runKoakParser functionWithIf
-        value `shouldBe` Right
-            ( [ Def
-                    "fib"
-                    [VariableDef "x" Nothing]
-                    Nothing
-                    (If
-                        (BinaryOp "<" (Identifier "x") (Int 3))
-                        (Expression [Int 3])
-                        (Just
+        it "Function with complexe for." $ do
+            let value = runKoakParser functionWithComplexeFor
+            value `shouldBe` Right
+                ( [ Def
+                        "madelhelp"
+                        [ VariableDef "xmin"  Nothing
+                        , VariableDef "xmax"  Nothing
+                        , VariableDef "xmax"  Nothing
+                        , VariableDef "xstep" Nothing
+                        , VariableDef "ymax"  Nothing
+                        , VariableDef "ystep" Nothing
+                        ]
+                        Nothing
+                        (For
+                            (Identifier "y")
+                            (Identifier "ymin")
+                            (Identifier "y")
+                            (Identifier "ymax")
+                            (Identifier "ystep")
                             (Expression
-                                [ BinaryOp
-                                      "+"
-                                      (Call
-                                          (Identifier "fib")
-                                          [ BinaryOp "-"
-                                                     (Identifier "x")
-                                                     (Int 1)
-                                          ]
-                                      )
-                                      (Call
-                                          (Identifier "fib")
-                                          [ BinaryOp "-"
-                                                     (Identifier "x")
-                                                     (Int 2)
-                                          ]
+                                [ Primary
+                                      (For
+                                          (Identifier "x")
+                                          (Identifier "xmin")
+                                          (Identifier "x")
+                                          (Identifier "xmax")
+                                          (Identifier "xstep")
+                                          (Expression
+                                              [ Call
+                                                  (Identifier "printdensity")
+                                                  [ Call
+                                                        (Identifier
+                                                            "mandelconverge"
+                                                        )
+                                                        [ Identifier "x"
+                                                        , Identifier "y"
+                                                        ]
+                                                  ]
+                                              , Call (Identifier "putchar")
+                                                     [Int 10]
+                                              ]
+                                          )
                                       )
                                 ]
                             )
                         )
-                    )
-              ]
-            , ""
-            )
-
-    it "Function with complexe for." $ do
-        let value = runKoakParser functionWithComplexeFor
-        value `shouldBe` Right
-            ( [ Def
-                    "madelhelp"
-                    [ VariableDef "xmin"  Nothing
-                    , VariableDef "xmax"  Nothing
-                    , VariableDef "xmax"  Nothing
-                    , VariableDef "xstep" Nothing
-                    , VariableDef "ymax"  Nothing
-                    , VariableDef "ystep" Nothing
-                    ]
-                    Nothing
-                    (For
-                        (Identifier "y")
-                        (Identifier "ymin")
-                        (Identifier "y")
-                        (Identifier "ymax")
-                        (Identifier "ystep")
-                        (Expression
-                            [ Primary
-                                  (For
-                                      (Identifier "x")
-                                      (Identifier "xmin")
-                                      (Identifier "x")
-                                      (Identifier "xmax")
-                                      (Identifier "xstep")
-                                      (Expression
-                                          [ Call
-                                              (Identifier "printdensity")
-                                              [ Call
-                                                    (Identifier "mandelconverge"
-                                                    )
-                                                    [ Identifier "x"
-                                                    , Identifier "y"
-                                                    ]
-                                              ]
-                                          , Call (Identifier "putchar") [Int 10]
-                                          ]
-                                      )
-                                  )
-                            ]
-                        )
-                    )
-              ]
-            , ""
-            )
+                  ]
+                , ""
+                )
 
