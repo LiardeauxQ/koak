@@ -25,7 +25,7 @@ module KParser
     )
 where
 
-import           Parser
+import           Lexer
 import           Control.Monad
 import           Control.Applicative
 import           AST
@@ -72,7 +72,8 @@ expressions =
     forExpr
         <|> ifExpr
         <|> whileExpr
-        <|> Expression <$> ((:) <$> expression <*> many (char ':' *> expression))
+        <|> Expression
+        <$> ((:) <$> expression <*> many (char ':' *> expression))
 
 forExpr :: Parser KExprs
 forExpr = do
@@ -142,23 +143,25 @@ identifier = do
     return (first : next)
 
 dot :: Parser Char
-dot = char '.' <* noneOf "."
+dot = char '.'
 
 decimalConst :: Parser KExpr
 decimalConst = Int . read <$> many1 digit
 
 doubleConst :: Parser KExpr
 doubleConst =
-    do
+    (do
             Int f <- decimalConst
             dot
             s <- many digit
             return $ Float $ read $ show f ++ "." ++ s
-        <|> do
+        )
+        <|> (do
                 dot
                 Int v <- decimalConst
                 return $ Float $ read $ "0." ++ show v
+            )
 
 
 literal :: Parser KExpr
-literal = decimalConst <|> doubleConst
+literal = doubleConst <|> decimalConst
