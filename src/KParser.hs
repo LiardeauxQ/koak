@@ -25,6 +25,7 @@ module KParser
     )
 where
 
+import           Debug.Trace
 import           Lexer
 import           Control.Monad
 import           Control.Applicative
@@ -108,32 +109,34 @@ whileExpr = do
 
 binop :: Parser (KExpr -> KExpr -> KExpr)
 binop =
-    (BinaryOp . (: []) <$> oneOf "+-/*%<>=")
-        <|> (BinaryOp <$> string "==")
+    (BinaryOp <$> string "==")
         <|> (BinaryOp <$> string "!=")
+        <|> (BinaryOp . (: []) <$> oneOf "+-/*%<>=")
 
 unop :: Parser (KExpr -> KExpr)
 unop = UnaryOp . (: []) <$> oneOf "-!"
 
 expression :: Parser KExpr
-expression = chainl1 (unary <|> expression) binop
+expression = trace "Expression" $ do
+    others <- chainl1 (unary <|> expression) binop
+    trace (show others) $ return others
 
 unary :: Parser KExpr
-unary = (unop <*> unary) <|> postfix
+unary = trace "Unary" $ (unop <*> unary) <|> postfix
 
 postfix :: Parser KExpr
-postfix = do
-    p <- primary
-    c <- optional callExpr
-    return $ case c of
-        Just x  -> Call p x
-        Nothing -> p
+postfix = trace "Postfix" $ (Call <$> primary <*> callExpr) <|> primary
 
 callExpr :: Parser [KExpr]
-callExpr = parens $ (:) <$> expression <*> many (char ',' *> expression)
+callExpr = trace "CallExpr" $ do
+    char '('
+    first <- expression
+    next  <- many (char ',' *> expression)
+    char ')'
+    return (first : next)
 
 primary :: Parser KExpr
-primary =
+primary = trace "Primary" $
     (Identifier <$> identifier) <|> literal <|> (Primary <$> parens expressions)
 
 identifier :: Parser String
