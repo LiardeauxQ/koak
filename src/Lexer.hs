@@ -15,6 +15,8 @@ module Lexer
     , Parser.many1
     , Parser.chainl
     , Parser.chainl1
+    , Parser.sepBy1
+    , Parser.sepBy
     )
 where
 

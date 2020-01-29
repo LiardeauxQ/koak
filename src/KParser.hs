@@ -43,11 +43,8 @@ defs :: Parser KDefs
 defs = prototype <*> expressions
 
 prototype :: Parser (KExprs -> KDefs)
-prototype = do
-    name       <- prototypeFunc
-    args       <- prototypeArgs
-    returnType <- optional (char ':' >> ktype)
-    return $ Def name args returnType
+prototype =
+    Def <$> prototypeFunc <*> prototypeArgs <*> optional (char ':' >> ktype)
 
 prototypeFunc :: Parser Name
 prototypeFunc = identifier
@@ -118,8 +115,10 @@ unop = UnaryOp . (: []) <$> oneOf "-!"
 
 expression :: Parser KExpr
 expression = trace "Expression" $ do
-    others <- chainl1 (unary <|> expression) binop
-    trace (show others) $ return others
+    first <- unary
+    others <- many (binop <*> (unary <|> expression))
+    let flex = foldl (\acc e -> e acc) first others
+    trace ("Expr: " ++ show first) $ return flex
 
 unary :: Parser KExpr
 unary = trace "Unary" $ (unop <*> unary) <|> postfix
@@ -128,16 +127,14 @@ postfix :: Parser KExpr
 postfix = trace "Postfix" $ (Call <$> primary <*> callExpr) <|> primary
 
 callExpr :: Parser [KExpr]
-callExpr = trace "CallExpr" $ do
-    char '('
-    first <- expression
-    next  <- many (char ',' *> expression)
-    char ')'
-    return (first : next)
+callExpr = trace "CallExpr" $ parens $ sepBy1 expression (char ',')
 
 primary :: Parser KExpr
-primary = trace "Primary" $
-    (Identifier <$> identifier) <|> literal <|> (Primary <$> parens expressions)
+primary =
+    trace "Primary"
+        $   (Identifier <$> identifier)
+        <|> literal
+        <|> (Primary <$> parens expressions)
 
 identifier :: Parser String
 identifier = do

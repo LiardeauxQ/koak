@@ -111,10 +111,8 @@ oneOf cs = Parser $ StateT $ \s -> case s of
 parens :: Parser a -> Parser a
 parens = between (char '(') (char ')')
 
-sepBy :: Parser a -> Parser a -> Parser [a]
-sepBy p sep = sepBy1 p sep <|> return empty
+sepBy p sep = sepBy1 p sep <|> return []
 
-sepBy1 :: Parser a -> Parser a -> Parser [a]
 sepBy1 p sep = do
     x  <- p
     xs <- many (sep >> p)
