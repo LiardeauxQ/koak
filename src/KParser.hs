@@ -113,28 +113,42 @@ binop =
 unop :: Parser (KExpr -> KExpr)
 unop = UnaryOp . (: []) <$> oneOf "-!"
 
+assop = BinaryOp "=" <$ char '='
+eqop = (BinaryOp <$> string "==") <|> (BinaryOp <$> string "!=")
+cmpop = (BinaryOp "<" <$ char '<') <|> (BinaryOp ">" <$ char '>')
+addop = (BinaryOp "+" <$ char '+') <|> (BinaryOp "-" <$ char '-')
+mulop = (BinaryOp "*" <$ char '*') <|> (BinaryOp "/" <$ char '/')
+
+expr = eq `chainl1` assop
+
+eq = cmp `chainl1` eqop
+
+cmp = add `chainl1` cmpop
+
+add = mul `chainl1` addop
+
+mul = (unary <|> primary) `chainl1` mulop
+
 expression :: Parser KExpr
-expression = trace "Expression" $ do
-    first <- unary
-    others <- many (binop <*> (unary <|> expression))
-    let flex = foldl (\acc e -> e acc) first others
-    trace ("Expr: " ++ show first) $ return flex
+expression = expr
 
 unary :: Parser KExpr
-unary = trace "Unary" $ (unop <*> unary) <|> postfix
+unary = (unop <*> unary) <|> postfix
 
 postfix :: Parser KExpr
-postfix = trace "Postfix" $ (Call <$> primary <*> callExpr) <|> primary
+postfix = do
+    res  <- optional callExpr
+    expr <- primary
+    return $ case res of
+        Nothing -> expr
+        Just x  -> Call expr x
 
 callExpr :: Parser [KExpr]
-callExpr = trace "CallExpr" $ parens $ sepBy1 expression (char ',')
+callExpr = parens $ sepBy1 expression (char ',')
 
 primary :: Parser KExpr
 primary =
-    trace "Primary"
-        $   (Identifier <$> identifier)
-        <|> literal
-        <|> (Primary <$> parens expressions)
+    (Identifier <$> identifier) <|> literal <|> (Primary <$> parens expressions)
 
 identifier :: Parser String
 identifier = do
