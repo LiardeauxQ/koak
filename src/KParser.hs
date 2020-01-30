@@ -91,7 +91,7 @@ forExpr = do
 ifExpr :: Parser KExprs
 ifExpr = do
     string "if"
-    expr <- expression
+    expr <- parens expression
     string "then"
     expr1 <- expressions
     expr2 <- optional (string "else" >> expressions)
