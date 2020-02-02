@@ -1,4 +1,5 @@
 {-# LANGUAGE InstanceSigs #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Parser
     ( Parser(..)
@@ -63,10 +64,9 @@ instance Alternative Parser where
     empty = Parser $ StateT $ \s ->
         Left $ ParseError { line = 0, column = 0, message = "Empty" }
     a <|> b = Parser $ StateT $ \s -> case (runParser a s, runParser b s) of
-        (Left  x, Left y ) -> Left x
-        (Right x, Left y ) -> Right x
-        (Left  x, Right y) -> Right y
-        (Right x, Right y) -> Right x
+        (Right x, _      ) -> Right x
+        (_      , Right y) -> Right y
+        (x      , _      ) -> x
 
 runParser :: Parser a -> String -> Either ParseError (a, String)
 runParser = runState . unParser
@@ -78,9 +78,9 @@ many1 p = do
     return (x : xs)
 
 anyChar :: Parser Char
-anyChar = Parser $ StateT $ \s -> case s of
+anyChar = Parser $ StateT $ \case
     ""       -> Left $ ParseError { line = 0, column = 0, message = "Empty" }
-    (c : cs) -> Right $ (c, cs)
+    (c : cs) -> Right (c, cs)
 
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy pred = do
@@ -95,14 +95,14 @@ string :: String -> Parser String
 string = foldr (\c -> (<*>) ((:) <$> char c)) (pure [])
 
 noneOf :: String -> Parser Char
-noneOf cs = Parser $ StateT $ \s -> case s of
+noneOf cs = Parser $ StateT $ \case
     (x : xs) -> if x `elem` cs
         then Left $ ParseError { line = 0, column = 0, message = "Empty" }
         else Right (x, xs)
     [] -> Left $ ParseError { line = 0, column = 0, message = "Empty" }
 
 oneOf :: String -> Parser Char
-oneOf cs = Parser $ StateT $ \s -> case s of
+oneOf cs = Parser $ StateT $ \case
     (x : xs) -> if x `elem` cs
         then Right (x, xs)
         else Left $ ParseError { line = 0, column = 0, message = "Empty" }
@@ -119,7 +119,7 @@ sepBy1 p sep = do
     return (x : xs)
 
 sc :: Parser ()
-sc = void $ manyOf "\t "
+sc = void $ manyOf "\t \n"
 
 digit :: Parser Char
 digit = oneOf "0123456789"

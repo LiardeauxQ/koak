@@ -27,6 +27,7 @@ where
 
 import           Debug.Trace
 import           Lexer
+import qualified Parser
 import           Control.Monad
 import           Control.Applicative
 import           AST
@@ -91,7 +92,7 @@ forExpr = do
 ifExpr :: Parser KExprs
 ifExpr = do
     string "if"
-    expr <- parens expression
+    expr <- expression
     string "then"
     expr1 <- expressions
     expr2 <- optional (string "else" >> expressions)
@@ -137,23 +138,23 @@ unary = (unop <*> unary) <|> postfix
 
 postfix :: Parser KExpr
 postfix = do
-    res  <- optional callExpr
     expr <- primary
+    res  <- optional callExpr
     return $ case res of
         Nothing -> expr
         Just x  -> Call expr x
 
 callExpr :: Parser [KExpr]
-callExpr = parens $ sepBy1 expression (char ',')
+callExpr = parens $ sepBy expression (char ',')
 
 primary :: Parser KExpr
 primary =
     (Identifier <$> identifier) <|> literal <|> (Primary <$> parens expressions)
 
 identifier :: Parser String
-identifier = do
-    first <- letter
-    next  <- many (letter <|> digit)
+identifier = Parser.sc *> do
+    first <- Parser.letter
+    next  <- many (Parser.letter <|> Parser.digit)
     return (first : next)
 
 dot :: Parser Char
@@ -178,4 +179,4 @@ doubleConst =
 
 
 literal :: Parser KExpr
-literal = doubleConst <|> decimalConst
+literal = Parser.sc *> (doubleConst <|> decimalConst)
