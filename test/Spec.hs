@@ -24,10 +24,10 @@ complexeFunctionDefinitionKoak =
     \    b;\n"
 functionWithIf =
     "def fib(x)\n\
-    \    if (x < 3) then\n\
+    \    if x < 3 then\n\
     \        1\n\
     \    else\n\
-    \        fib(x-1)+fib(x-2);\n"
+    \        fib(x-1)+fib(x-2);"
 functionWithComplexeFor =
     "def mandelhelp(xmin xmax xstep ymin ymax ystep)\n\
     \      for y = ymin, y < ymax, ystep in (\n\
@@ -39,7 +39,7 @@ main :: IO ()
 main = hspec $ do
 
     describe "Parse if Expr" $ it "Function with complexe for." $ do
-        let value = runParser ifExpr "if (x < 2) then 2 else 3"
+        let value = runParser ifExpr "if x < 2 then 2 else 3"
         value `shouldBe` Right
             ( If (BinaryOp "<" (Identifier "x") (Int 2))
                  (Expression [Int 2])
@@ -140,7 +140,7 @@ main = hspec $ do
                         Nothing
                         (If
                             (BinaryOp "<" (Identifier "x") (Int 3))
-                            (Expression [Int 3])
+                            (Expression [Int 1])
                             (Just
                                 (Expression
                                     [ BinaryOp
