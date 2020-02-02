@@ -3,7 +3,6 @@ module KParser
     , kdefs
     , defs
     , prototype
-    , prototypeFunc
     , prototypeArgs
     , ktype
     , expressions
@@ -37,7 +36,12 @@ koak = many1 kdefs
 
 kdefs :: Parser KDefs
 kdefs =
-    (string "def" *> defs <* char ';')
+    (do
+            string "def"
+            res <- Parser.sc >> defs
+            char ';'
+            return res
+        )
         <|> (Expressions <$> (expressions <* char ';'))
 
 defs :: Parser KDefs
@@ -45,18 +49,12 @@ defs = prototype <*> expressions
 
 prototype :: Parser (KExprs -> KDefs)
 prototype =
-    Def <$> prototypeFunc <*> prototypeArgs <*> optional (char ':' >> ktype)
-
-prototypeFunc :: Parser Name
-prototypeFunc = identifier
-
+    Def <$> identifier <*> prototypeArgs <*> optional (char ':' *> ktype)
 
 prototypeArgs :: Parser [VariableDef]
-prototypeArgs = parens $ many $ do
-    name <- identifier
-    char ':'
-    valueType <- optional ktype
-    return $ VariableDef name valueType
+prototypeArgs = parens $ sepBy
+    (VariableDef <$> identifier <*> optional (char ':' *> ktype))
+    (char ',')
 
 
 ktype :: Parser KType
@@ -68,11 +66,13 @@ ktype =
 
 expressions :: Parser KExprs
 expressions =
-    forExpr
-        <|> ifExpr
-        <|> whileExpr
-        <|> Expression
-        <$> ((:) <$> expression <*> many (char ':' *> expression))
+    Parser.sc
+        *> (   forExpr
+           <|> ifExpr
+           <|> whileExpr
+           <|> Expression
+           <$> ((:) <$> expression <*> many (char ':' *> expression))
+           )
 
 forExpr :: Parser KExprs
 forExpr = do
