@@ -2,6 +2,7 @@ module State
     ( StateT(..)
     , state
     , get
+    , gets
     , put
     , modify
     )
@@ -38,6 +39,9 @@ state f = do
 
 get :: (Monad m) => StateT s m s
 get = StateT $ \s -> return (s, s)
+
+gets :: (Monad m) => (s -> a) -> StateT s m a
+gets f = f <$> get
 
 put :: (Monad m) => s -> StateT s m ()
 put s = StateT $ \_ -> return ((), s)
