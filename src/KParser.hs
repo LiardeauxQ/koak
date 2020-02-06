@@ -1,9 +1,32 @@
 module KParser
     ( koak
+    , kdefs
+    , defs
+    , prototype
+    , prototypeArgs
+    , ktype
+    , expressions
+    , forExpr
+    , ifExpr
+    , whileExpr
+    , binop
+    , unop
+    , expression
+    , unary
+    , postfix
+    , callExpr
+    , primary
+    , identifier
+    , dot
+    , decimalConst
+    , doubleConst
+    , literal
     )
 where
 
-import           Parser
+import           Debug.Trace
+import           Lexer
+import qualified Parser
 import           Control.Monad
 import           Control.Applicative
 import           AST
@@ -13,29 +36,25 @@ koak = many1 kdefs
 
 kdefs :: Parser KDefs
 kdefs =
-    (string "def" *> defs <* char ';')
+    (do
+            string "def"
+            res <- Parser.sc >> defs
+            char ';'
+            return res
+        )
         <|> (Expressions <$> (expressions <* char ';'))
 
 defs :: Parser KDefs
 defs = prototype <*> expressions
 
 prototype :: Parser (KExprs -> KDefs)
-prototype = do
-    name       <- prototypeFunc
-    args       <- prototypeArgs
-    returnType <- optional (char ':' >> ktype)
-    return $ Def name args returnType
-
-prototypeFunc :: Parser Name
-prototypeFunc = identifier
-
+prototype =
+    Def <$> identifier <*> prototypeArgs <*> optional (char ':' *> ktype)
 
 prototypeArgs :: Parser [VariableDef]
-prototypeArgs = parens $ many $ do
-    name <- identifier
-    char ':'
-    valueType <- optional ktype
-    return $ VariableDef name valueType
+prototypeArgs = parens $ sepBy
+    (VariableDef <$> identifier <*> optional (char ':' *> ktype))
+    (char ',')
 
 
 ktype :: Parser KType
@@ -47,10 +66,13 @@ ktype =
 
 expressions :: Parser KExprs
 expressions =
-    forExpr
-        <|> ifExpr
-        <|> whileExpr
-        <|> Expression <$> ((:) <$> expression <*> (many (char ':' *> expression)))
+    Parser.sc
+        *> (   forExpr
+           <|> ifExpr
+           <|> whileExpr
+           <|> Expression
+           <$> ((:) <$> expression <*> many (char ':' *> expression))
+           )
 
 forExpr :: Parser KExprs
 forExpr = do
@@ -85,58 +107,76 @@ whileExpr = do
 
 binop :: Parser (KExpr -> KExpr -> KExpr)
 binop =
-    (BinaryOp . (: []) <$> oneOf "+-/*%<>=")
-        <|> (BinaryOp <$> string "==")
+    (BinaryOp <$> string "==")
         <|> (BinaryOp <$> string "!=")
+        <|> (BinaryOp . (: []) <$> oneOf "+-/*%<>=")
 
 unop :: Parser (KExpr -> KExpr)
 unop = UnaryOp . (: []) <$> oneOf "-!"
 
+assop = BinaryOp "=" <$ char '='
+eqop = (BinaryOp <$> string "==") <|> (BinaryOp <$> string "!=")
+cmpop = (BinaryOp "<" <$ char '<') <|> (BinaryOp ">" <$ char '>')
+addop = (BinaryOp "+" <$ char '+') <|> (BinaryOp "-" <$ char '-')
+mulop = (BinaryOp "*" <$ char '*') <|> (BinaryOp "/" <$ char '/')
+
+expr = eq `chainl1` assop
+
+eq = cmp `chainl1` eqop
+
+cmp = add `chainl1` cmpop
+
+add = mul `chainl1` addop
+
+mul = (unary <|> primary) `chainl1` mulop
+
 expression :: Parser KExpr
-expression = return $ Int 4 -- unary `chainl1` (binop (unary <|> expression))
+expression = expr
 
 unary :: Parser KExpr
 unary = (unop <*> unary) <|> postfix
 
 postfix :: Parser KExpr
 postfix = do
-    p <- primary
-    c <- optional callExpr
-    return $ case c of
-        Just x  -> Call p x
-        Nothing -> p
+    expr <- primary
+    res  <- optional callExpr
+    return $ case res of
+        Nothing -> expr
+        Just x  -> Call expr x
 
 callExpr :: Parser [KExpr]
-callExpr = parens ((:) <$> expression <*> many (char ',' *> expression))
+callExpr = parens $ sepBy expression (char ',')
 
 primary :: Parser KExpr
 primary =
     (Identifier <$> identifier) <|> literal <|> (Primary <$> parens expressions)
 
 identifier :: Parser String
-identifier = do
-    first <- letter
-    next  <- many (letter <|> digit)
+identifier = Parser.sc *> do
+    first <- Parser.letter
+    next  <- many (Parser.letter <|> Parser.digit)
     return (first : next)
 
 dot :: Parser Char
-dot = char '.' <* noneOf "."
+dot = char '.'
 
 decimalConst :: Parser KExpr
 decimalConst = Int . read <$> many1 digit
 
 doubleConst :: Parser KExpr
 doubleConst =
-    do
+    (do
             Int f <- decimalConst
             dot
             s <- many digit
             return $ Float $ read $ show f ++ "." ++ s
-        <|> do
+        )
+        <|> (do
                 dot
                 Int v <- decimalConst
                 return $ Float $ read $ "0." ++ show v
+            )
 
 
 literal :: Parser KExpr
-literal = decimalConst <|> doubleConst
+literal = Parser.sc *> (doubleConst <|> decimalConst)

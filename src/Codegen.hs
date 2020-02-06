@@ -3,6 +3,7 @@ module Codegen where
 import AST
 import State
 import Data.Either
+import Data.Map
 import Control.Monad.Fail
 import Control.Monad
 import Control.Applicative
@@ -18,9 +19,9 @@ import LLVM.AST.FloatingPointPredicate
 import Data.Functor.Identity (runIdentity)
 import Data.Maybe (fromMaybe)
 
-newtype CodegenError = CodegenError{message :: String} deriving (Show, Eq)
+newtype CodegenError = CodegenError { message :: String } deriving (Show, Eq)
 
-type SymbolTable = [(String, Operand)]
+type SymbolTable = Map String Operand
 
 data CodegenBlock = CodegenBlock
   { blockName :: LLVM.AST.Name
@@ -61,7 +62,7 @@ data CodegenState = CodegenState
   } deriving (Show, Eq)
 
 emptyCodegenState :: CodegenState
-emptyCodegenState = CodegenState (mkName "main") [] 0 [] Nothing
+emptyCodegenState = CodegenState (mkName "main") Data.Map.empty 0 [] Nothing
 
 newtype CodegenT m a = CodegenT { unCodegenT :: StateT CodegenState m a }
 
@@ -81,7 +82,7 @@ instance (Monad m) => Monad (CodegenT m) where
     runCodegenT (f a') e'
 
 instance (Alternative m, Monad m) => Alternative (CodegenT m) where
-  empty = CodegenT empty
+  empty = CodegenT Control.Applicative.empty
   (CodegenT a) <|> (CodegenT b) = CodegenT $ a <|> b
 
 runCodegenT :: CodegenT m a -> CodegenState -> m (a, CodegenState)
@@ -144,12 +145,12 @@ generateExpr (BinaryOp name lhs rhs) = case name of
   ">"  -> cmpOperationInstruction  lhs rhs OGT
   "==" -> cmpOperationInstruction  lhs rhs OEQ
   "!=" -> cmpOperationInstruction  lhs rhs ONE
-  "="  -> empty
-  _    -> empty
-generateExpr (UnaryOp name expr) = empty
+  "="  -> Control.Applicative.empty
+  _    -> Control.Applicative.empty
+generateExpr (UnaryOp name expr) = Control.Applicative.empty
 generateExpr (Identifier name) = return $ LocalReference double (mkName name)
-generateExpr (AST.Call expr exprs) = empty
-generateExpr (Primary expr) = empty
+generateExpr (AST.Call expr exprs) = Control.Applicative.empty
+generateExpr (Primary expr) = Control.Applicative.empty
 
 mathOperationInstruction :: KExpr -> KExpr -> (Operand -> Operand -> Instruction) -> Codegen Operand
 mathOperationInstruction lhs rhs op = do

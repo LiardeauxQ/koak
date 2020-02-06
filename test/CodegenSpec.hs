@@ -1,6 +1,7 @@
 module CodegenSpec where
 
 import           Codegen
+import           Data.Map
 import           LLVM.AST.Name
 import           Test.Hspec
 import           Control.Exception              ( evaluate )
@@ -8,7 +9,7 @@ import           Debug.Trace
 
 freshCodegenState = CodegenState
   { stateName = mkName "test"
-  , symTab    = []
+  , symTab    = Data.Map.empty
   , count     = 0
   , blocks    = []
   , currentBlock = Nothing
