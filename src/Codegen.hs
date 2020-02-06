@@ -3,63 +3,180 @@ module Codegen where
 import AST
 import State
 import Data.Either
-import Control.Monad
 import Control.Monad.Fail
+import Control.Monad
 import Control.Applicative
 
 import LLVM.AST
+import LLVM.AST.Global
+import qualified LLVM.AST.Instruction as I
+import qualified LLVM.AST.Constant as C
+import qualified LLVM.AST.Float as F
+import qualified LLVM.IRBuilder.Monad as B
+import LLVM.IRBuilder.Monad (emitInstr)
+import LLVM.AST.FloatingPointPredicate
+import Data.Functor.Identity (runIdentity)
+import Data.Maybe (fromMaybe)
 
 newtype CodegenError = CodegenError{message :: String} deriving (Show, Eq)
 
-newtype Codegen a = Codegen { unCodegen :: StateT [KDefs] (Either CodegenError) a }
+type SymbolTable = [(String, Operand)]
 
-instance Functor Codegen where
-  fmap f p = Codegen $ f <$> unCodegen p
+data CodegenBlock = CodegenBlock
+  { blockName :: LLVM.AST.Name
+  , instructions :: [Named Instruction]
+  , term :: Maybe (Named Terminator)
+  } deriving (Show, Eq)
 
-instance Applicative Codegen where
-  pure a = Codegen $ pure a
-  f <*> a = Codegen $ unCodegen f <*> unCodegen a
+initNewBlock :: String -> CodegenBlock
+initNewBlock name = CodegenBlock
+  { blockName = mkName name
+  , instructions = []
+  , term = Nothing
+  }
 
-instance Monad Codegen where
-  return a = Codegen $ return a
-  a >>= f = Codegen $ StateT $ \e -> do
-    (a', e') <- runCodegen a e
-    runCodegen (f a') e'
+getBlockInstructions :: CodegenBlock -> [Named Instruction]
+getBlockInstructions (CodegenBlock _ instructions _) = instructions
 
-instance Alternative Codegen where
-  empty = Codegen $ StateT $ \e ->
-    Left $ CodegenError { message = "Empty" }
-  a <|> b = Codegen $ StateT $ \e -> case (runCodegen a e, runCodegen b e) of
-    (Left x, Left y) -> Left x
-    (Right x, Left y) -> Right x
-    (Left x, Right y) -> Right y
-    (Right x, Right y) -> Right x
+addBlockInstruction :: CodegenBlock -> Named Instruction -> CodegenBlock
+addBlockInstruction (CodegenBlock name instructions term) new = CodegenBlock
+  { blockName = name
+  , instructions = instructions ++ [new]
+  , term = term
+  }
 
-instance MonadFail Codegen where
-  fail s = Codegen $ StateT $ \e ->
-    Left $ CodegenError { message = s }
+modifyBlockTerm :: CodegenBlock -> Named Terminator -> CodegenBlock
+modifyBlockTerm (CodegenBlock name instructions _) newTerm = CodegenBlock
+  { blockName = name
+  , instructions = instructions
+  , term = Just newTerm
+  }
 
-runCodegen :: Codegen a -> [KDefs] -> Either CodegenError (a, [KDefs])
-runCodegen = runState . unCodegen
+data CodegenState = CodegenState
+  { stateName   :: LLVM.AST.Name
+  , symTab :: SymbolTable
+  , count :: Word
+  , blocks :: [CodegenBlock]
+  , currentBlock :: Maybe CodegenBlock
+  } deriving (Show, Eq)
 
-generateCode :: [KDefs] -> Either CodegenError (Codegen String)
-generateCode (Def {}:xs) = Left $ CodegenError "Def"
-generateCode (Expressions {}: xs) = Left $ CodegenError "Expressions"
+emptyCodegenState :: CodegenState
+emptyCodegenState = CodegenState (mkName "main") [] 0 [] Nothing
 
-generateNewVar :: VariableDef -> Either CodegenError (Codegen String)
-generateNewVar (VariableDef name terminator) = Left $ CodegenError "Variable"
+newtype CodegenT m a = CodegenT { unCodegenT :: StateT CodegenState m a }
 
-generateNewExpr :: KExpr -> Either CodegenError (Codegen String)
-generateNewExpr (Int value) = Left $ CodegenError "Int"
-generateNewExpr (Float value) = Left $ CodegenError "Double"
-generateNewExpr (BinaryOp name left right) = Left $ CodegenError "Binary op"
-generateNewExpr (UnaryOp name value) = Left $ CodegenError "Unary op"
-generateNewExpr (Identifier name) = Left $ CodegenError "Identifier"
-generateNewExpr (AST.Call value values) = Left $ CodegenError "Call"
-generateNewExpr (Primary values) = Left $ CodegenError "Primary"
+type Codegen = CodegenT Maybe
 
-generateNewExprs :: KExprs -> Either CodegenError (Codegen String)
-generateNewExprs (For v1 v2 v3 v4 v5 v6) = Left $ CodegenError "For"
-generateNewExprs (If v1 v2 v3) = Left $ CodegenError "If"
-generateNewExprs (While v1 v2) = Left $ CodegenError "While"
-generateNewExprs (Expression values) = Left $ CodegenError "Expression"
+instance (Monad m) => Functor (CodegenT m) where
+  fmap f p = CodegenT $ f <$> unCodegenT p
+
+instance (Monad m) => Applicative (CodegenT m) where
+  pure a = CodegenT $ pure a
+  f <*> a = CodegenT $ unCodegenT f <*> unCodegenT a
+
+instance (Monad m) => Monad (CodegenT m) where
+  return a = CodegenT $ return a
+  a >>= f = CodegenT $ StateT $ \e -> do
+    (a', e') <- runCodegenT a e
+    runCodegenT (f a') e'
+
+instance (Alternative m, Monad m) => Alternative (CodegenT m) where
+  empty = CodegenT empty
+  (CodegenT a) <|> (CodegenT b) = CodegenT $ a <|> b
+
+runCodegenT :: CodegenT m a -> CodegenState -> m (a, CodegenState)
+runCodegenT = runState . unCodegenT
+
+getSymbolTable :: CodegenState -> SymbolTable
+getSymbolTable (CodegenState _ symTab _ _ _) = symTab
+
+runMaybe :: Maybe a -> a
+runMaybe = fromMaybe (error "Invalid value of maybe")
+
+fresh :: Codegen LLVM.AST.Name
+fresh = do
+  i <- CodegenT $ gets count
+  CodegenT $ modify $ \s -> s { count = i + 1}
+  return $ mkName $ show $ i + 1
+
+instr :: Type -> Instruction -> Codegen Operand
+instr ret i = do
+  current <- CodegenT $ gets currentBlock
+  name <- fresh
+  case current of
+    Just block ->
+      CodegenT $ modify $ \s -> s { currentBlock = Just $ addBlockInstruction block (name := i)}
+    Nothing -> error "Nothing"
+  return $ LocalReference ret name
+
+define :: Type -> String -> [(String, Type)] -> [LLVM.AST.BasicBlock] -> Definition
+define ret name parametersAttr blocks = GlobalDefinition $ functionDefaults {
+  returnType = ret,
+  name = mkName name,
+  parameters = (toParameters parametersAttr, Prelude.False),
+  basicBlocks = blocks
+}
+
+toParameters :: [(String, Type)] -> [Parameter]
+toParameters elems = [Parameter type' (mkName name) [] | (name, type') <- elems]
+
+convertVariablesDef :: [VariableDef] -> [(String, Type)]
+convertVariablesDef defs = [(name, toType type') | (VariableDef name (Just type')) <- defs]
+
+toType :: KType -> Type
+toType TInteger = FloatingPointType DoubleFP
+toType TDouble = FloatingPointType DoubleFP
+toType TVoid = VoidType
+
+double = FloatingPointType DoubleFP
+
+intSize = 4
+
+generateExpr :: KExpr -> Codegen Operand
+generateExpr (Int value) = return $ ConstantOperand $ C.Int intSize value
+generateExpr (Float value) = return $ ConstantOperand $ C.Float $ F.Double value
+generateExpr (BinaryOp name lhs rhs) = case name of
+  "*"  -> mathOperationInstruction lhs rhs toMulInstruction
+  "/"  -> mathOperationInstruction lhs rhs toDivInstruction
+  "+"  -> mathOperationInstruction lhs rhs toAddInstruction
+  "-"  -> mathOperationInstruction lhs rhs toSubInstruction
+  "<"  -> cmpOperationInstruction  lhs rhs OLT
+  ">"  -> cmpOperationInstruction  lhs rhs OGT
+  "==" -> cmpOperationInstruction  lhs rhs OEQ
+  "!=" -> cmpOperationInstruction  lhs rhs ONE
+  "="  -> empty
+  _    -> empty
+generateExpr (UnaryOp name expr) = empty
+generateExpr (Identifier name) = return $ LocalReference double (mkName name)
+generateExpr (AST.Call expr exprs) = empty
+generateExpr (Primary expr) = empty
+
+mathOperationInstruction :: KExpr -> KExpr -> (Operand -> Operand -> Instruction) -> Codegen Operand
+mathOperationInstruction lhs rhs op = do
+  first  <- generateExpr lhs
+  second <- generateExpr rhs
+  instr double $ op first second
+
+toAddInstruction :: Operand -> Operand -> Instruction
+toAddInstruction lhs rhs = FAdd noFastMathFlags lhs rhs []
+
+-- Sub
+
+toSubInstruction :: Operand -> Operand -> Instruction
+toSubInstruction lhs rhs = FSub noFastMathFlags lhs rhs []
+
+-- Mul
+
+toMulInstruction :: Operand -> Operand -> Instruction
+toMulInstruction lhs rhs = FMul noFastMathFlags lhs rhs []
+
+-- Div
+
+toDivInstruction :: Operand -> Operand -> Instruction
+toDivInstruction lhs rhs = FDiv noFastMathFlags lhs rhs []
+
+cmpOperationInstruction :: KExpr -> KExpr -> FloatingPointPredicate -> Codegen Operand
+cmpOperationInstruction lhs rhs op = do
+  first <- generateExpr lhs
+  second <- generateExpr rhs
+  instr double (FCmp op first second [])

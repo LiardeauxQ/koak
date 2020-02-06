@@ -8,24 +8,26 @@ import           Debug.Trace
 
 freshCodegenState = CodegenState
   { stateName = mkName "test"
-  , symTab = []
-  , blocks = []
+  , symTab    = []
+  , count     = 0
+  , blocks    = []
+  , currentBlock = Nothing
   }
 
-runFreshCodegen :: CodegenState -> Either CodegenError (String, CodegenState)
-runFreshCodegen = runCodegen fresh
+runFreshCodegen :: CodegenState -> Maybe (Name, CodegenState)
+runFreshCodegen = runCodegenT fresh
 
-getStringValue :: Either CodegenError (String, CodegenState) -> String
+getStringValue :: Maybe (Name, CodegenState) -> Name
 getStringValue value = case value of
-  Left e -> "Error"
-  Right (s, _) -> s
+  Nothing -> mkName "Error"
+  Just (s, _) -> s
 
 spec :: Spec
 spec =
   describe "Codegen utilisation" $ do
     it "Create fresh name" $ do
       let value = runFreshCodegen freshCodegenState
-      getStringValue value `shouldBe` "1"
+      getStringValue value `shouldBe` mkName "1"
     it "Create fresh name" $ do
       let value = runFreshCodegen freshCodegenState
-      getStringValue value `shouldBe` "1"
+      getStringValue value `shouldBe` mkName "1"
