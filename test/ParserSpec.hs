@@ -31,6 +31,12 @@ functionWithIf =
     \        1\n\
     \    else\n\
     \        fib(x-1)+fib(x-2);"
+typedFunctionWithIfSpaced =
+    "def fib(x   : int)  : int\n\
+    \    if x < 3 then\n\
+    \        1\n\
+    \    else\n\
+    \        fib( x - 1 ) + fib( x - 2 );"
 functionWithComplexeFor =
     "def mandelhelp(xmin, xmax, xstep, ymin, ymax, ystep)\n\
     \    for y = ymin, y < ymax, ystep in\n\
@@ -147,6 +153,7 @@ spec = do
                 , ""
                 )
 
+
     describe "Function definition." $ do
         it "Function definition." $ do
             let value = runKoakParser functionDefinitionKoak
@@ -253,6 +260,43 @@ spec = do
                   ]
                 , ""
                 )
+
+        it "Function with if spaced with type." $ do
+            let value = runKoakParser typedFunctionWithIfSpaced
+            value `shouldBe` Right
+                ( [ Def
+                        "fib"
+                        [VariableDef "x" (Just TInteger)]
+                        (Just TInteger)
+                        (If
+                            (BinaryOp "<" (Identifier "x") (Int 3))
+                            (Expression [Int 1])
+                            (Just
+                                (Expression
+                                    [ BinaryOp
+                                          "+"
+                                          (Call
+                                              (Identifier "fib")
+                                              [ BinaryOp "-"
+                                                         (Identifier "x")
+                                                         (Int 1)
+                                              ]
+                                          )
+                                          (Call
+                                              (Identifier "fib")
+                                              [ BinaryOp "-"
+                                                         (Identifier "x")
+                                                         (Int 2)
+                                              ]
+                                          )
+                                    ]
+                                )
+                            )
+                        )
+                  ]
+                , ""
+                )
+
 
         it "Function with complexe for." $ do
             let value = runKoakParser functionWithComplexeFor
