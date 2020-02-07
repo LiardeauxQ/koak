@@ -37,6 +37,14 @@ functionWithComplexeFor =
     \        (for x = xmin, x < xmax, xstep in\n\
     \            printdensity(mandelconverge(x,y))) : \n\
     \        putchard(10);"
+multipleExpression =
+    "a = 50;\n\
+    \i = 0;\n\
+    \while i < a do\n\
+    \    b = i + 10 :\n\
+    \    print(b + 10);\n\
+    \print(a);\n\
+    \print(i);"
 
 spec :: Spec
 spec = do
@@ -49,7 +57,7 @@ spec = do
             , ""
             )
 
-    describe "Basic Expressions" $ do
+    describe "Koak Expressions" $ do
         it "While expression. [MANDATORY]" $ do
             let value = runKoakParser whileKoak
             value `shouldBe` Right
@@ -113,6 +121,31 @@ spec = do
                                , ""
                                )
 
+        it "Complexe expression." $ do
+            let value = runKoakParser multipleExpression
+            value `shouldBe` Right
+                ( [ Expressions
+                      $ Expression [BinaryOp "=" (Identifier "a") (Int 50)]
+                  , Expressions
+                      $ Expression [BinaryOp "=" (Identifier "i") (Int 0)]
+                  , Expressions $ While
+                      (BinaryOp "<" (Identifier "i") (Identifier "a"))
+                      (Expression
+                          [ BinaryOp
+                              "="
+                              (Identifier "b")
+                              (BinaryOp "+" (Identifier "i") (Int 10))
+                          , Call (Identifier "print")
+                                 [BinaryOp "+" (Identifier "b") (Int 10)]
+                          ]
+                      )
+                  , Expressions $ Expression
+                      [Call (Identifier "print") [Identifier "a"]]
+                  , Expressions
+                      $ Expression [Call (Identifier "print") [Identifier "i"]]
+                  ]
+                , ""
+                )
 
     describe "Function definition." $ do
         it "Function definition." $ do
