@@ -25,6 +25,7 @@ module Parser
     )
 where
 
+import           Debug.Trace
 import           State
 import           Data.Either
 import           Control.Monad
@@ -33,19 +34,18 @@ import           Data.Maybe
 import           Control.Monad.Fail
 import           Data.Bifunctor
 
+data ParseInfo = ParseInfo Int Int deriving(Show, Eq)
+
 data ParseError = ParseError { line :: Int
                              , column :: Int
                              , message :: String
                              } deriving(Show, Eq)
 
--- Wrapping StateT with a newtype.
-newtype Parser a = Parser { unParser :: StateT String (Either ParseError) a }
--- To implement monad on Parser we need to unwrap the parser with unParser
--- then use underlying StateT implementation.
+newtype Parser a = Parser { unParser :: StateT (String, ParseInfo) (Either ParseError) a }
 
 instance MonadFail Parser where
-    fail s = Parser $ StateT $ \c ->
-        Left $ ParseError { line = 0, column = 0, message = s }
+    fail s = Parser $ StateT $ \(s, ParseInfo line col) ->
+        Left $ ParseError { line = line, column = col, message = s }
 
 instance Functor Parser where
     fmap f p = Parser $ f <$> unParser p
@@ -57,19 +57,33 @@ instance Applicative Parser where
 instance Monad Parser where
     return a = Parser $ return a
     a >>= f = Parser $ StateT $ \s -> do
-        (a', s') <- runParser a s
-        runParser (f a') s'
+        (a', s') <- runParserInternal a s
+        runParserInternal (f a') s'
 
 instance Alternative Parser where
-    empty = Parser $ StateT $ \s ->
-        Left $ ParseError { line = 0, column = 0, message = "Empty" }
-    a <|> b = Parser $ StateT $ \s -> case (runParser a s, runParser b s) of
-        (Right x, _      ) -> Right x
-        (_      , Right y) -> Right y
-        (x      , _      ) -> x
+    empty = Parser $ StateT $ \(_, ParseInfo line col) ->
+        Left $ ParseError { line = line, column = col, message = "Error" }
+    a <|> b = Parser $ StateT $ \s ->
+        case (runParserInternal a s, runParserInternal b s) of
+            (Right x, _      ) -> Right x
+            (_      , Right y) -> Right y
+            (x      , _      ) -> x
+
+updateInternal :: ParseInfo -> Char -> ParseInfo
+updateInternal (ParseInfo line col) char = case char of
+    '\n' -> ParseInfo (line + 1) 0
+    _    -> ParseInfo line (col + 1)
+
+runParserInternal
+    :: Parser a
+    -> (String, ParseInfo)
+    -> Either ParseError (a, (String, ParseInfo))
+runParserInternal = runState . unParser
 
 runParser :: Parser a -> String -> Either ParseError (a, String)
-runParser = runState . unParser
+runParser p str = case runParserInternal p (str, ParseInfo 0 0) of
+    Left  x              -> Left x
+    Right (r, (s, info)) -> Right (r, s)
 
 many1 :: Parser a -> Parser [a]
 many1 p = do
@@ -79,8 +93,11 @@ many1 p = do
 
 anyChar :: Parser Char
 anyChar = Parser $ StateT $ \case
-    ""       -> Left $ ParseError { line = 0, column = 0, message = "Empty" }
-    (c : cs) -> Right (c, cs)
+    ("", ParseInfo line col) -> Left $ ParseError { line    = line
+                                                  , column  = col
+                                                  , message = "No more data."
+                                                  }
+    ((c : cs), info) -> Right (c, (cs, updateInternal info c))
 
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy pred = do
@@ -96,23 +113,35 @@ string = foldr (\c -> (<*>) ((:) <$> char c)) (pure [])
 
 noneOf :: String -> Parser Char
 noneOf cs = Parser $ StateT $ \case
-    (x : xs) -> if x `elem` cs
-        then Left $ ParseError { line = 0, column = 0, message = "Empty" }
-        else Right (x, xs)
-    [] -> Left $ ParseError { line = 0, column = 0, message = "Empty" }
+    ((x : xs), ParseInfo line col) -> if x `elem` cs
+        then Left $ ParseError
+            { line    = line
+            , column  = col
+            , message = "Character " ++ (x : []) ++ " found in " ++ cs ++ "."
+            }
+        else Right (x, (xs, updateInternal (ParseInfo line col) x))
+    ([], ParseInfo line col) ->
+        Left $ ParseError { line = line, column = col, message = "Empty" }
 
 oneOf :: String -> Parser Char
 oneOf cs = Parser $ StateT $ \case
-    (x : xs) -> if x `elem` cs
-        then Right (x, xs)
-        else Left $ ParseError { line = 0, column = 0, message = "Empty" }
-    [] -> Left $ ParseError { line = 0, column = 0, message = "Empty" }
+    ((x : xs), ParseInfo line col) -> if x `elem` cs
+        then Right (x, (xs, ParseInfo line col))
+        else Left $ ParseError
+            { line    = line
+            , column  = col
+            , message = "Character " ++ (x : []) ++ " not found in " ++ cs
+            }
+    ([], ParseInfo line col) ->
+        Left $ ParseError { line = line, column = col, message = "Empty" }
 
 parens :: Parser a -> Parser a
 parens = between (char '(') (char ')')
 
+sepBy :: Parser a -> Parser b -> Parser [a]
 sepBy p sep = sepBy1 p sep <|> return []
 
+sepBy1 :: Parser a -> Parser b -> Parser [a]
 sepBy1 p sep = do
     x  <- p
     xs <- many (sep >> p)
