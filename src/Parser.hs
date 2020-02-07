@@ -40,10 +40,7 @@ data ParseError = ParseError { line :: Int
                              , message :: String
                              } deriving(Show, Eq)
 
--- Wrapping StateT with a newtype.
 newtype Parser a = Parser { unParser :: StateT (String, ParseInfo) (Either ParseError) a }
--- To implement monad on Parser we need to unwrap the parser with unParser
--- then use underlying StateT implementation.
 
 instance MonadFail Parser where
     fail s = Parser $ StateT $ \(s, ParseInfo line col) ->
@@ -71,6 +68,10 @@ instance Alternative Parser where
             (_      , Right y) -> Right y
             (x      , _      ) -> x
 
+updateInternal :: ParseInfo -> Char -> ParseInfo
+updateInternal (ParseInfo line col) char =
+    if char == '\n' then ParseInfo (line + 1) 0 else ParseInfo line (col + 1)
+
 runParserInternal
     :: Parser a
     -> (String, ParseInfo)
@@ -95,10 +96,6 @@ anyChar = Parser $ StateT $ \case
                                                   , message = "No more data."
                                                   }
     ((c : cs), info) -> Right (c, (cs, updateInternal info c))
-
-updateInternal :: ParseInfo -> Char -> ParseInfo
-updateInternal (ParseInfo line col) char =
-    if char == '\n' then ParseInfo (line + 1) 0 else ParseInfo line (col + 1)
 
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy pred = do
