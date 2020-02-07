@@ -25,6 +25,7 @@ module Parser
     )
 where
 
+import           Debug.Trace
 import           State
 import           Data.Either
 import           Control.Monad
@@ -69,8 +70,9 @@ instance Alternative Parser where
             (x      , _      ) -> x
 
 updateInternal :: ParseInfo -> Char -> ParseInfo
-updateInternal (ParseInfo line col) char =
-    if char == '\n' then ParseInfo (line + 1) 0 else ParseInfo line (col + 1)
+updateInternal (ParseInfo line col) char = case char of
+    '\n' -> ParseInfo (line + 1) 0
+    _    -> ParseInfo line (col + 1)
 
 runParserInternal
     :: Parser a
