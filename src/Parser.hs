@@ -120,7 +120,7 @@ noneOf cs = Parser $ StateT $ \case
             , column  = col
             , message = "Character " ++ (x : []) ++ " found in " ++ cs ++ "."
             }
-        else Right (x, (xs, ParseInfo line col)) -- TODO: Add index
+        else Right (x, (xs, updateInternal (ParseInfo line col) x))
     ([], ParseInfo line col) ->
         Left $ ParseError { line = line, column = col, message = "Empty" }
 
