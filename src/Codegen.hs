@@ -4,6 +4,8 @@ import AST
 import State
 import Data.Either
 import Data.Map
+import Data.Functor.Identity (runIdentity)
+import Data.Maybe (fromMaybe)
 import Control.Monad.Fail
 import Control.Monad
 import Control.Applicative
@@ -13,11 +15,9 @@ import LLVM.AST.Global
 import qualified LLVM.AST.Instruction as I
 import qualified LLVM.AST.Constant as C
 import qualified LLVM.AST.Float as F
-import qualified LLVM.IRBuilder.Monad as B
+import qualified LLVM.AST.CallingConvention as CC
 import LLVM.IRBuilder.Monad (emitInstr)
 import LLVM.AST.FloatingPointPredicate
-import Data.Functor.Identity (runIdentity)
-import Data.Maybe (fromMaybe)
 
 newtype CodegenError = CodegenError { message :: String } deriving (Show, Eq)
 
@@ -147,9 +147,12 @@ generateExpr (BinaryOp name lhs rhs) = case name of
   "!=" -> cmpOperationInstruction  lhs rhs ONE
   "="  -> Control.Applicative.empty
   _    -> Control.Applicative.empty
-generateExpr (UnaryOp name expr) = Control.Applicative.empty
-generateExpr (Identifier name) = return $ LocalReference double (mkName name)
-generateExpr (AST.Call expr exprs) = Control.Applicative.empty
+generateExpr (UnaryOp name expr) = case name of
+  "-"  -> Control.Applicative.empty
+  "!"  -> Control.Applicative.empty
+  _    -> Control.Applicative.empty
+generateExpr (Identifier name) = findOperandForIdentifier name
+generateExpr (AST.Call expr exprs) = callOperationInstruction expr exprs toCallInstruction
 generateExpr (Primary expr) = Control.Applicative.empty
 
 mathOperationInstruction :: KExpr -> KExpr -> (Operand -> Operand -> Instruction) -> Codegen Operand
@@ -181,3 +184,35 @@ cmpOperationInstruction lhs rhs op = do
   first <- generateExpr lhs
   second <- generateExpr rhs
   instr double (FCmp op first second [])
+
+toCallInstruction :: Operand -> [Operand] -> Instruction
+toCallInstruction fn args = I.Call Nothing CC.C [] (Right fn) [] [] []
+
+generateListExpr :: [KExpr] -> Codegen [Operand]
+generateListExpr expressions = forM expressions generateExpr
+
+callOperationInstruction :: KExpr -> [KExpr] -> (Operand -> [Operand] -> Instruction) -> Codegen Operand
+callOperationInstruction fn args op = do
+  fnCodegen <- generateExpr fn
+  argsCodegen <- generateListExpr args
+  instr double $ toCallInstruction fnCodegen argsCodegen
+
+findOperandForIdentifier :: AST.Name -> Codegen Operand
+findOperandForIdentifier name = do
+  symbols <- CodegenT $ gets symTab
+  case symbols !? name of
+    Just op -> return op
+    Nothing -> do
+      addr <- toAllocaOperand
+      operand <- toStoreOperand addr $ LocalReference double (mkName name)
+      CodegenT $ modify $ \s -> s { symTab =  Data.Map.insert name operand symbols}
+      return addr
+
+toAllocaOperand :: Codegen Operand
+toAllocaOperand = instr double $ I.Alloca double Nothing 0 []
+
+toLoadOperand :: Operand -> Codegen Operand
+toLoadOperand ptr = instr double $ I.Load Prelude.False ptr Nothing 0 []
+
+toStoreOperand :: Operand -> Operand -> Codegen Operand
+toStoreOperand ptr value = instr double $ I.Store Prelude.False ptr value Nothing 0 []
