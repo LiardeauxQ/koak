@@ -93,7 +93,7 @@ getSymbolTable :: CodegenState -> SymbolTable
 getSymbolTable (CodegenState _ symTab _ _ _ _) = symTab
 
 runMaybe :: Maybe a -> a
-runMaybe = fromMaybe (error "Invalid value of maybe")
+runMaybe = fromMaybe $ error "Invalid value of maybe"
 
 fresh :: Codegen LLVM.AST.Name
 fresh = do
