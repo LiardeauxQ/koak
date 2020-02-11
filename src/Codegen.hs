@@ -21,7 +21,7 @@ import LLVM.AST.FloatingPointPredicate
 
 newtype CodegenError = CodegenError { message :: String } deriving (Show, Eq)
 
-type SymbolTable = Map String Operand
+type SymbolTable = [(String, Operand)]
 
 data CodegenBlock = CodegenBlock
   { blockName :: LLVM.AST.Name
@@ -56,13 +56,14 @@ modifyBlockTerm (CodegenBlock name instructions _) newTerm = CodegenBlock
 data CodegenState = CodegenState
   { stateName   :: LLVM.AST.Name
   , symTab :: SymbolTable
-  , count :: Word
+  , names :: Map String Int
+  , count :: Int
   , blocks :: [CodegenBlock]
   , currentBlock :: Maybe CodegenBlock
   } deriving (Show, Eq)
 
 emptyCodegenState :: CodegenState
-emptyCodegenState = CodegenState (mkName "main") Data.Map.empty 0 [] Nothing
+emptyCodegenState = CodegenState (mkName "main") [] Data.Map.empty 0 [] Nothing
 
 newtype CodegenT m a = CodegenT { unCodegenT :: StateT CodegenState m a }
 
@@ -89,7 +90,7 @@ runCodegenT :: CodegenT m a -> CodegenState -> m (a, CodegenState)
 runCodegenT = runState . unCodegenT
 
 getSymbolTable :: CodegenState -> SymbolTable
-getSymbolTable (CodegenState _ symTab _ _ _) = symTab
+getSymbolTable (CodegenState _ symTab _ _ _ _) = symTab
 
 runMaybe :: Maybe a -> a
 runMaybe = fromMaybe (error "Invalid value of maybe")
@@ -99,6 +100,14 @@ fresh = do
   i <- CodegenT $ gets count
   CodegenT $ modify $ \s -> s { count = i + 1}
   return $ mkName $ show $ i + 1
+
+freshSuggestedName :: String -> Codegen LLVM.AST.Name
+freshSuggestedName sug = do
+  newName <- fresh
+  i <- CodegenT $ gets count
+  names <- CodegenT $ gets names
+  CodegenT $ modify $ \s -> s { names = Data.Map.insert sug i names }
+  return newName
 
 instr :: Type -> Instruction -> Codegen Operand
 instr ret i = do
@@ -137,14 +146,14 @@ generateExpr :: KExpr -> Codegen Operand
 generateExpr (Int value) = return $ ConstantOperand $ C.Int intSize value
 generateExpr (Float value) = return $ ConstantOperand $ C.Float $ F.Double value
 generateExpr (BinaryOp name lhs rhs) = case name of
-  "*"  -> mathOperationInstruction lhs rhs toMulInstruction
-  "/"  -> mathOperationInstruction lhs rhs toDivInstruction
-  "+"  -> mathOperationInstruction lhs rhs toAddInstruction
-  "-"  -> mathOperationInstruction lhs rhs toSubInstruction
-  "<"  -> cmpOperationInstruction  lhs rhs OLT
-  ">"  -> cmpOperationInstruction  lhs rhs OGT
-  "==" -> cmpOperationInstruction  lhs rhs OEQ
-  "!=" -> cmpOperationInstruction  lhs rhs ONE
+  "*"  -> mathOperation lhs rhs toMul
+  "/"  -> mathOperation lhs rhs toDiv
+  "+"  -> mathOperation lhs rhs toAdd
+  "-"  -> mathOperation lhs rhs toSub
+  "<"  -> cmpOperation  lhs rhs OLT
+  ">"  -> cmpOperation  lhs rhs OGT
+  "==" -> cmpOperation  lhs rhs OEQ
+  "!=" -> cmpOperation  lhs rhs ONE
   "="  -> Control.Applicative.empty
   _    -> Control.Applicative.empty
 generateExpr (UnaryOp name expr) = case name of
@@ -152,61 +161,66 @@ generateExpr (UnaryOp name expr) = case name of
   "!"  -> Control.Applicative.empty
   _    -> Control.Applicative.empty
 generateExpr (Identifier name) = findOperandForIdentifier name
-generateExpr (AST.Call expr exprs) = callOperationInstruction expr exprs toCallInstruction
+generateExpr (AST.Call expr exprs) = callOperation expr exprs toCall
 generateExpr (Primary expr) = Control.Applicative.empty
 
-mathOperationInstruction :: KExpr -> KExpr -> (Operand -> Operand -> Instruction) -> Codegen Operand
-mathOperationInstruction lhs rhs op = do
+mathOperation :: KExpr -> KExpr -> (Operand -> Operand -> Instruction) -> Codegen Operand
+mathOperation lhs rhs op = do
   first  <- generateExpr lhs
   second <- generateExpr rhs
   instr double $ op first second
 
-toAddInstruction :: Operand -> Operand -> Instruction
-toAddInstruction lhs rhs = FAdd noFastMathFlags lhs rhs []
+toAdd :: Operand -> Operand -> Instruction
+toAdd lhs rhs = FAdd noFastMathFlags lhs rhs []
 
 -- Sub
 
-toSubInstruction :: Operand -> Operand -> Instruction
-toSubInstruction lhs rhs = FSub noFastMathFlags lhs rhs []
+toSub :: Operand -> Operand -> Instruction
+toSub lhs rhs = FSub noFastMathFlags lhs rhs []
 
 -- Mul
 
-toMulInstruction :: Operand -> Operand -> Instruction
-toMulInstruction lhs rhs = FMul noFastMathFlags lhs rhs []
+toMul :: Operand -> Operand -> Instruction
+toMul lhs rhs = FMul noFastMathFlags lhs rhs []
 
 -- Div
 
-toDivInstruction :: Operand -> Operand -> Instruction
-toDivInstruction lhs rhs = FDiv noFastMathFlags lhs rhs []
+toDiv :: Operand -> Operand -> Instruction
+toDiv lhs rhs = FDiv noFastMathFlags lhs rhs []
 
-cmpOperationInstruction :: KExpr -> KExpr -> FloatingPointPredicate -> Codegen Operand
-cmpOperationInstruction lhs rhs op = do
+cmpOperation :: KExpr -> KExpr -> FloatingPointPredicate -> Codegen Operand
+cmpOperation lhs rhs op = do
   first <- generateExpr lhs
   second <- generateExpr rhs
   instr double (FCmp op first second [])
 
-toCallInstruction :: Operand -> [Operand] -> Instruction
-toCallInstruction fn args = I.Call Nothing CC.C [] (Right fn) [] [] []
+toCall :: Operand -> [Operand] -> Instruction
+toCall fn args = I.Call Nothing CC.C [] (Right fn) [] [] []
 
 generateListExpr :: [KExpr] -> Codegen [Operand]
 generateListExpr expressions = forM expressions generateExpr
 
-callOperationInstruction :: KExpr -> [KExpr] -> (Operand -> [Operand] -> Instruction) -> Codegen Operand
-callOperationInstruction fn args op = do
+callOperation :: KExpr -> [KExpr] -> (Operand -> [Operand] -> Instruction) -> Codegen Operand
+callOperation fn args op = do
   fnCodegen <- generateExpr fn
   argsCodegen <- generateListExpr args
-  instr double $ toCallInstruction fnCodegen argsCodegen
+  instr double $ toCall fnCodegen argsCodegen
+
+findOperandInSymtab :: String -> [(String, Operand)] -> Maybe Operand
+findOperandInSymtab _ [] = Nothing
+findOperandInSymtab value ((name, op):xs)
+  | name == value = Just op
+  | otherwise = findOperandInSymtab value xs
 
 findOperandForIdentifier :: AST.Name -> Codegen Operand
 findOperandForIdentifier name = do
   symbols <- CodegenT $ gets symTab
-  case symbols !? name of
-    Just op -> return op
+  case findOperandInSymtab name symbols of
+    Just addr -> toLoadOperand addr
     Nothing -> do
+      newName <- freshSuggestedName name
       addr <- toAllocaOperand
-      operand <- toStoreOperand addr $ LocalReference double (mkName name)
-      CodegenT $ modify $ \s -> s { symTab =  Data.Map.insert name operand symbols}
-      return addr
+      toStoreOperand addr $ LocalReference double newName
 
 toAllocaOperand :: Codegen Operand
 toAllocaOperand = instr double $ I.Alloca double Nothing 0 []
@@ -216,3 +230,18 @@ toLoadOperand ptr = instr double $ I.Load Prelude.False ptr Nothing 0 []
 
 toStoreOperand :: Operand -> Operand -> Codegen Operand
 toStoreOperand ptr value = instr double $ I.Store Prelude.False ptr value Nothing 0 []
+
+assignOperation :: KExpr -> KExpr -> Codegen Operand
+assignOperation lhs rhs = do
+  first <- generateExpr lhs
+  second <- generateExpr rhs
+  if isOperandAPointer second
+  then do
+    loaded <- toLoadOperand second
+    toStoreOperand first loaded
+  else toStoreOperand first second
+
+isOperandAPointer :: Operand -> Bool
+isOperandAPointer (LocalReference (PointerType _ _) _) = Prelude.True
+isOperandAPointer (ConstantOperand _) = Prelude.False
+isOperandAPointer (MetadataOperand _) = Prelude.False
