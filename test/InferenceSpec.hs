@@ -35,9 +35,28 @@ simpleFunction3 = -- def test(x, y, z: int) x + y + 2.0;
           )
     ]
 
-multipleValues =
+multipleValues = -- 
+    -- a = 50;
+    -- def add(x, y): double x + y;
+    -- i = 0.0;
+    -- f = add(2.0, i);
+    -- while i < a do
+    --     b = i + 10 :
+    --     print(b + 10);
+    -- print(a);
+    -- print(i);
+    --
     [ Expressions $ Expression [BinaryOp "=" (Identifier "a") (Int 50)]
-    , Expressions $ Expression [BinaryOp "=" (Identifier "i") (Int 0)]
+    , Def "add"
+          [VariableDef "x" Nothing, VariableDef "y" Nothing] -- Inference Here
+          (Just TDouble)
+          (Expression [BinaryOp "+" (Identifier "x") (Identifier "y")])
+    , Expressions $ Expression [BinaryOp "=" (Identifier "i") (Float 0)]
+    , Expressions $ Expression
+        [ BinaryOp "="
+                   (Identifier "f")
+                   (Call (Identifier "add") [Float 2.0, Identifier "i"])
+        ]
     , Expressions $ While
         (BinaryOp "<" (Identifier "i") (Identifier "a"))
         (Expression
