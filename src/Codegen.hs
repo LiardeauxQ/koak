@@ -133,7 +133,7 @@ instr ret i = do
   name <- fresh
   case current of
     Just block ->
-      CodegenT $ modify $ \s -> s { currentBlock = Just $ addBlockInstruction block (name := i)}
+      CodegenT $ modify $ \s -> s { currentBlock = Just $ trace (show name ++ show i) $ addBlockInstruction block (name := i)}
     Nothing -> error "Cannot create block for instruction"
   return $ LocalReference ret name
 
@@ -182,19 +182,24 @@ double = FloatingPointType DoubleFP
 intSize = 4
 
 generateExpressions :: KExprs -> Codegen Operand
-generateExpressions (For expr1 expr2 expr3 expr4 expr5 exprs) = trace "for" $ Control.Applicative.empty
-generateExpressions (If expr exprs1 exprs2) = trace "if" $ Control.Applicative.empty
-generateExpressions (While expr exprs) = trace "while" $ Control.Applicative.empty
+generateExpressions (For expr1 expr2 expr3 expr4 expr5 exprs) = trace "for" Control.Applicative.empty
+generateExpressions (If expr exprs1 exprs2) = trace "if" Control.Applicative.empty
+generateExpressions (While expr exprs) = trace "while" Control.Applicative.empty
 generateExpressions (Expression exprs) = trace "do" $ do
   CodegenT $ modify $ \s -> s { currentBlock = Just $ initNewBlock "entry" }
-  trace "generateExpression" $ last $ Prelude.map generateExpression exprs
-  toRetOperand $ ConstantOperand $ C.Null VoidType -- Find a better way to set terminator
+  --retVal <- trace (show exprs) $ forM exprs generateExpression
+  --loaded <- toLoadOperand $ last retVal
+  addr <- toAllocaOperand
+  --toStoreOperand addr $ ConstantOperand $ C.Float $ F.Double 1.0
+  instr double $ toMul (ConstantOperand $ C.Float $ F.Double 1.0) $ (ConstantOperand $ C.Float $ F.Double 1.0)
+  --loaded <- toLoadOperand addr
+  ret <- toRetOperand $ LocalReference double $ mkName "1" -- Find a better way to set terminator
   CodegenT $ modify endCurrentBlock
-  trace "return" $ return $ trace "Constant" $ ConstantOperand $ C.Null VoidType
+  return $ ConstantOperand $ C.Float $ F.Double 1.0--last retVal
 
 generateExpression :: KExpr -> Codegen Operand
-generateExpression (Int value) = return $ ConstantOperand $ C.Int intSize value
-generateExpression (Float value) = return $ ConstantOperand $ C.Float $ F.Double value
+generateExpression (Int value) = trace (show value) $ toNumOperand $ fromInteger value
+generateExpression (Float value) = trace (show value) $ toNumOperand value
 generateExpression (BinaryOp name lhs rhs) = case name of
   "*"  -> mathOperation lhs rhs toMul
   "/"  -> mathOperation lhs rhs toDiv
@@ -204,15 +209,18 @@ generateExpression (BinaryOp name lhs rhs) = case name of
   ">"  -> cmpOperation  lhs rhs OGT
   "==" -> cmpOperation  lhs rhs OEQ
   "!=" -> cmpOperation  lhs rhs ONE
-  "="  -> trace "assign" $ assignOperation lhs rhs
+  "="  -> generateExpression rhs--trace ("assign" ++ show lhs ++ show rhs) $ assignOperation lhs rhs
   _    -> Control.Applicative.empty
 generateExpression (UnaryOp name expr) = case name of
   "-"  -> Control.Applicative.empty
   "!"  -> Control.Applicative.empty
   _    -> Control.Applicative.empty
-generateExpression (Identifier name) = findOperandForIdentifier name
+generateExpression (Identifier name) = trace (name ++ "id") $ findOperandForIdentifier name
 generateExpression (AST.Call expr exprs) = callOperation expr exprs toCall
 generateExpression (Primary expr) = Control.Applicative.empty
+
+toNumOperand :: Double -> Codegen Operand
+toNumOperand value = return $ ConstantOperand $ C.Float $ F.Double value
 
 mathOperation :: KExpr -> KExpr -> (Operand -> Operand -> Instruction) -> Codegen Operand
 mathOperation lhs rhs op = do
@@ -266,11 +274,14 @@ findOperandForIdentifier :: AST.Name -> Codegen Operand
 findOperandForIdentifier name = do
   symbols <- CodegenT $ gets symTab
   case findOperandInSymtab name symbols of
-    Just addr -> toLoadOperand addr
+    Just addr -> return addr
     Nothing -> do
       newName <- freshSuggestedName name
       addr <- toAllocaOperand
-      toStoreOperand addr $ LocalReference double newName
+      symTab <- CodegenT $ gets symTab
+      CodegenT $ modify $ \s -> ( s { symTab = symTab ++ [(name, addr)]} )
+      --toStoreOperand addr $ LocalReference double newName
+      return addr
 
 toAllocaOperand :: Codegen Operand
 toAllocaOperand = instr double $ I.Alloca double Nothing 0 []
@@ -286,16 +297,14 @@ toRetOperand value = terminator $ Do $ Ret (Just value) []
 
 assignOperation :: KExpr -> KExpr -> Codegen Operand
 assignOperation lhs rhs = do
-  first <- generateExpression lhs
-  second <- generateExpression rhs
-  if isOperandAPointer second
-  then do
-    loaded <- toLoadOperand second
-    toStoreOperand first loaded
-  else toStoreOperand first second
+  first <- trace ("first" ++ show lhs) $ generateExpression lhs
+  second <- trace ("second" ++ show rhs) $ generateExpression rhs
+  loaded <- toLoadOperand second
+  trace "store" $ toStoreOperand first loaded
+  trace "return first" $ return first
 
 isOperandAPointer :: Operand -> Bool
-isOperandAPointer (LocalReference (PointerType _ _) _) = Prelude.True
+isOperandAPointer (LocalReference (PointerType _ _) _) = trace "pointer" Prelude.True
 isOperandAPointer (LocalReference _ _) = Prelude.False
 isOperandAPointer (ConstantOperand _) = Prelude.False
 isOperandAPointer (MetadataOperand _) = Prelude.False

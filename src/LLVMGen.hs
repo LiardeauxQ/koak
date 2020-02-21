@@ -1,3 +1,5 @@
+--{-# LANGUAGE OverloadedStrings #-}
+
 module LLVMGen where
 
 import           Data.String
@@ -12,6 +14,7 @@ import           LLVM.Internal.Module
 import           State
 import           Control.Applicative
 import           Control.Monad
+import Data.ByteString.Lazy.Char8 (ByteString)
 
 newtype LLVMState = LLVMState{mainModule :: LLVM.AST.Module}
                       deriving (Show, Eq)
@@ -40,13 +43,14 @@ instance (Alternative m, Monad m) => Alternative (LLVMT m) where
 runLLVMT :: Monad m => LLVMT m a -> LLVMState -> m (a, LLVMState)
 runLLVMT = runState . unLLVMT
 
-startKoak :: String -> IO String
+startKoak :: String -> IO ()
 startKoak content = do
   let mod = emptyModule "test"
   case runParser koak content of
-    Left e -> return $ show e
-    Right (defs, str) -> do
-      forM defs generateDef
+    Left e -> print e
+    Right (defs, str) ->
+      toLLVMCode LLVMState {mainModule = mod} $ forM defs generateDef
+
 
 emptyModule :: String -> LLVM.AST.Module
 emptyModule label = defaultModule { moduleName = fromString label }
@@ -54,13 +58,10 @@ emptyModule label = defaultModule { moduleName = fromString label }
 addDefinitionToModule :: LLVM.AST.Module -> Definition -> LLVM.AST.Module
 addDefinitionToModule module'@(LLVM.AST.Module _ _ _ _ defs) def = module' { moduleDefinitions = defs ++ [def] }
 
---runLLVM :: KDefs -> LLVM.AST.Module -> LLVM ()
---runLLVM defs module' = generateDef defs
-
 generateBlocksFromExprs :: KExprs -> [CodegenBlock]
 generateBlocksFromExprs expressions =
   case runCodegenT (generateExpressions expressions) emptyCodegenState of
-    Just (a, CodegenState _ _ _ _ blocks _) -> trace "just block" blocks
+    Just (a, CodegenState _ _ _ _ blocks _) -> trace (show blocks) blocks
     Nothing -> trace "empty blocks" []
 
 generateDef :: KDefs -> LLVM ()
@@ -68,17 +69,22 @@ generateDef (Def name varDefs type' expressions) = do
   let ret = trace "type" $ case type' of
                 Just value -> toType value
                 Nothing    -> VoidType
-  let parameters = convertVariablesDef varDefs
-  let blocks = map convertToBasicBlock $ generateBlocksFromExprs expressions
-  mod <- LLVMT $ gets mainModule
+  let parameters = trace "param" $ convertVariablesDef varDefs
+  let blocks = trace "blocks" $ map convertToBasicBlock $ generateBlocksFromExprs expressions
+  mod <- trace "get module" $ LLVMT $ gets mainModule
   LLVMT $ modify $ \s -> s { mainModule = addDefinitionToModule mod $ define ret name [] blocks }
 generateDef (Expressions expressions) = do
   let blocks = trace "map" $ map convertToBasicBlock $ generateBlocksFromExprs expressions
   mod <- LLVMT $ gets mainModule
   LLVMT $ modify $ \s -> s { mainModule = addDefinitionToModule mod $ define VoidType "main" [] blocks }
 
-toLLVMCode :: LLVM.AST.Module -> IO String
-toLLVMCode mod =
-  withContext (\context ->
-    withModuleFromAST context mod $ \genMod ->
-      moduleLLVMAssembly genMod)
+toLLVMCode :: LLVMState -> LLVM a -> IO ()
+toLLVMCode state llvm =
+  case runLLVMT llvm state of
+    Just (_, LLVMState mod) ->
+      withContext
+        (\context ->
+           withModuleFromAST context mod $ \genMod -> do
+             s <- moduleLLVMAssembly genMod
+             print s)
+    Nothing -> empty

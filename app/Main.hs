@@ -20,7 +20,7 @@ handleFile filename = do
   file <- openFile filename ReadMode
   content <- hGetContents file
   putStrLn $ inputParsingExpression content
-  putStrLn $ startKoak content ""
+  startKoak content
 
 --main = interact inputParsingExpression
 
