@@ -51,6 +51,10 @@ multipleValues = --
           [VariableDef "x" Nothing, VariableDef "y" Nothing] -- Inference Here
           (Just TDouble)
           (Expression [BinaryOp "+" (Identifier "x") (Identifier "y")])
+    , Def "addInt"
+          [VariableDef "x" Nothing, VariableDef "y" (Just TInteger)] -- Inference Here
+          Nothing -- Inference Here
+          (Expression [BinaryOp "+" (Identifier "x") (Identifier "y")])
     , Expressions $ Expression [BinaryOp "=" (Identifier "i") (Float 0)]
     , Expressions $ Expression
         [ BinaryOp "="
@@ -134,3 +138,54 @@ spec = do
                                      ]
                                  )
                            ]
+    describe "Complexe expressions inference"
+        $          it "Complexe expression 1"
+        $          infereType multipleValues
+        `shouldBe` Right
+                       [ Expressions
+                           $ Expression [BinaryOp "=" (Identifier "a") (Int 50)]
+                       , Def
+                           "add"
+                           [ VariableDef "x" (Just TDouble)  -- Inference Here
+                           , VariableDef "y" (Just TDouble)  -- Inference Here
+                           ]
+                           (Just TDouble)
+                           (Expression
+                               [BinaryOp "+" (Identifier "x") (Identifier "y")]
+                           )
+                       , Def
+                           "addInt"
+                           [ VariableDef "x" (Just TInteger)
+                           , VariableDef "y" (Just TInteger)  -- Inference Here
+                           ]
+                           (Just TInteger) -- Inference Here
+                           (Expression
+                               [BinaryOp "+" (Identifier "x") (Identifier "y")]
+                           )
+                       , Expressions $ Expression
+                           [BinaryOp "=" (Identifier "i") (Float 0)]
+                       , Expressions $ Expression
+                           [ BinaryOp
+                                 "="
+                                 (Identifier "f")
+                                 (Call (Identifier "add")
+                                       [Float 2.0, Identifier "i"]
+                                 )
+                           ]
+                       , Expressions $ While
+                           (BinaryOp "<" (Identifier "i") (Identifier "a"))
+                           (Expression
+                               [ BinaryOp
+                                   "="
+                                   (Identifier "b")
+                                   (BinaryOp "+" (Identifier "i") (Int 10))
+                               , Call
+                                   (Identifier "print")
+                                   [BinaryOp "+" (Identifier "b") (Int 10)]
+                               ]
+                           )
+                       , Expressions $ Expression
+                           [Call (Identifier "print") [Identifier "a"]]
+                       , Expressions $ Expression
+                           [Call (Identifier "print") [Identifier "i"]]
+                       ]

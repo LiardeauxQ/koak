@@ -49,15 +49,17 @@ annotateKExprs kexprs ctx = case kexprs of
     While cond action   -> annotateKExprs action $ annotateKExpr cond ctx
     Expression listExpr -> foldr annotateKExpr ctx listExpr
 
+annotateManyKExpr :: [KExpr] -> Context -> Context
+annotateManyKExpr exprs ctx = foldr annotateKExpr ctx exprs
 
 annotateKExpr :: KExpr -> Context -> Context
 annotateKExpr kexpr ctx = case kexpr of
     Int   x                  -> ctx
     Float y                  -> ctx
     BinaryOp name expr expr1 -> annotateBinary name expr expr1 ctx
-    UnaryOp name expr        -> ctx
+    UnaryOp name expr        -> annotateKExpr expr ctx
     Identifier name          -> ctx
-    Call expr listExpr       -> ctx
+    Call expr listExpr -> annotateKExpr expr $ annotateManyKExpr listExpr ctx
     Primary exprs            -> annotateKExprs exprs ctx
 
 annotateBinary :: String -> KExpr -> KExpr -> Context -> Context
