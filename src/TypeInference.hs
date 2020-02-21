@@ -1,24 +1,89 @@
 module TypeInference
-    ()
+    ( infereType
+    )
 where
 
+import           Control.Exception
+import           Debug.Trace
 import           State
 import           AST
-import           Data.Map
+import qualified Data.Map                      as Map
 
 type Error = String
 
--- Type context.
-type TypeState = StateT (Map String KType) (Either Error) [KDefs]
+type Context = (Map.Map String (Maybe (Either String KType)))
 
-infereType :: [KDefs] -> [KDefs]
-infereType = annotate . collectConstraints . unify
+infereType :: [KDefs] -> Either Error [KDefs]
+infereType e = unify e . collectConstraints e . annotate $ e
 
-annotate :: [KDefs] -> [KDefs]
-annotate = id
+--- Annotation
 
-collectConstraints :: [KDefs] -> [KDefs]
-collectConstraints = id
+annotate :: [KDefs] -> Context
+annotate = foldr annotateKdef Map.empty
 
-unify :: [KDefs] -> [KDefs]
-unify = id
+annotateKdef :: KDefs -> Context -> Context
+annotateKdef kdef ctx = case kdef of
+    Def name vars ty expr ->
+        Map.insert name (Right <$> ty) (annotateVariables vars ctx)
+    Expressions kexprs -> ctx
+
+annotateVariables :: [VariableDef] -> Context -> Context
+annotateVariables vars ctx = foldr annotateVariableDef ctx vars
+
+annotateVariableDef :: VariableDef -> Context -> Context
+annotateVariableDef (VariableDef name ty) = Map.insert name (Right <$> ty)
+
+annotateKExprs :: KExprs -> Context -> Context
+annotateKExprs kexprs ctx = case kexprs of
+    For var1 val1 cond1 cond2 step exprs ->
+        annotateKExprs exprs
+            $ annotateKExpr step
+            $ annotateKExpr cond1
+            $ annotateKExpr var1 ctx
+    If cond action elseAction -> case elseAction of
+        Just elseA ->
+            annotateKExprs elseA $ annotateKExprs action $ annotateKExpr
+                cond
+                ctx
+        Nothing -> annotateKExprs action $ annotateKExpr cond ctx
+    While cond action   -> annotateKExprs action $ annotateKExpr cond ctx
+    Expression listExpr -> foldr annotateKExpr ctx listExpr
+
+annotateManyKExpr :: [KExpr] -> Context -> Context
+annotateManyKExpr exprs ctx = foldr annotateKExpr ctx exprs
+
+annotateKExpr :: KExpr -> Context -> Context
+annotateKExpr kexpr ctx = case kexpr of
+    Int   x                  -> ctx
+    Float y                  -> ctx
+    BinaryOp name expr expr1 -> annotateBinary name expr expr1 ctx
+    UnaryOp name expr        -> annotateKExpr expr ctx
+    Identifier name          -> ctx
+    Call expr listExpr -> annotateKExpr expr $ annotateManyKExpr listExpr ctx
+    Primary exprs            -> annotateKExprs exprs ctx
+
+annotateBinary :: String -> KExpr -> KExpr -> Context -> Context
+annotateBinary name ex1 ex2 ctx = case (ex1, ex2) of
+    (Identifier x, Identifier y) -> Map.insert x (Just $ Left y) ctx
+    (Identifier x, Call name _) ->
+        Map.insert x (Just . Left $ getIdentifier name) ctx
+    (Identifier x, expr) -> Map.insert x Nothing ctx
+    _                    -> ctx
+
+getIdentifier :: KExpr -> String
+getIdentifier expr = case expr of
+    Identifier name -> name
+    _               -> error "Error function call is not an identifier."
+
+--- Collect constraints
+
+collectConstraints :: [KDefs] -> Context -> Context
+collectConstraints expr ctx = traceMap ctx ctx
+
+--- Unify
+
+unify :: [KDefs] -> Context -> Either Error [KDefs]
+unify expr ctx = traceMap ctx $ Right expr
+
+traceMap :: Context -> a -> a
+traceMap ctx = trace $ unwords $ map show (Map.toAscList ctx)
