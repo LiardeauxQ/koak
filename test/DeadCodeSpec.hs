@@ -85,6 +85,36 @@ simpleFunctionDeadCode =
         [Call (Identifier "print") [Call (Identifier "test") []]]
     ]
 
+simpleFunctionDeadCode2 =
+    -- def test(x, y, z, i, s, f, r): int x + y / 2;
+    -- a = 2;
+    -- b = 2;
+    -- def test2() print(2);
+    -- a = tet(123);
+    [ Def
+        "test"
+        [ VariableDef "x" Nothing
+        , VariableDef "y" Nothing
+        , VariableDef "z" Nothing
+        , VariableDef "i" Nothing
+        , VariableDef "s" Nothing
+        , VariableDef "f" Nothing
+        , VariableDef "r" Nothing
+        ]
+        (Just TInteger)
+        (Expression
+            [ BinaryOp "/"
+                       (BinaryOp "+" (Identifier "x") (Identifier "y"))
+                       (Int 2)
+            ]
+        )
+    , Expressions $ Expression [BinaryOp "=" (Identifier "a") (Int 2)]
+    , Expressions $ Expression [BinaryOp "=" (Identifier "b") (Int 2)]
+    , Def "test2" [] Nothing (Expression [Call (Identifier "print") [Int 2]])
+    , Expressions $ Expression
+        [BinaryOp "=" (Identifier "a") (Call (Identifier "tet") [Int 123])]
+    ]
+
 spec :: Spec
 spec = do
     describe "Edge case" $ do
@@ -96,13 +126,27 @@ spec = do
         it "Nothing to remove 2"
             $          removeDeadCode simpleFunctionNoDeadCode
             `shouldBe` simpleFunctionNoDeadCode
-    describe "Basic dead code removal" $
+    describe "Basic dead code removal" $ do
         it "Remove dead code"
-        $          removeDeadCode simpleFunctionDeadCode
-        `shouldBe` [ Def "test" [] (Just TInteger) (Expression [Int 10])
-                   , Expressions
-                       $ Expression
-                             [ Call (Identifier "print")
-                                    [Call (Identifier "test") []]
-                             ]
-                   ]
+            $          removeDeadCode simpleFunctionDeadCode
+            `shouldBe` [ Def "test" [] (Just TInteger) (Expression [Int 10])
+                       , Expressions
+                           $ Expression
+                                 [ Call (Identifier "print")
+                                        [Call (Identifier "test") []]
+                                 ]
+                       ]
+        it "Remove dead code complexe expression"
+            $          removeDeadCode simpleFunctionDeadCode2
+            `shouldBe` [ Expressions
+                           $ Expression [BinaryOp "=" (Identifier "a") (Int 2)]
+                       , Expressions
+                           $ Expression [BinaryOp "=" (Identifier "b") (Int 2)]
+                       , Expressions
+                           $ Expression
+                                 [ BinaryOp
+                                       "="
+                                       (Identifier "a")
+                                       (Call (Identifier "tet") [Int 123])
+                                 ]
+                       ]
