@@ -1,12 +1,12 @@
--- module CodegenSpec where
--- 
--- import           Codegen
--- import           Data.Map
--- import           LLVM.AST.Name
--- import           Test.Hspec
--- import           Control.Exception              ( evaluate )
--- import           Debug.Trace
--- 
+module CodegenSpec where
+ 
+ import           Codegen
+ import           Data.Map
+ import           LLVM.AST.Name
+ import           Test.Hspec
+ import           Control.Exception              ( evaluate )
+ import           Debug.Trace
+ 
 -- freshCodegenState = CodegenState
 --   { stateName = mkName "test"
 --   , symTab    = Data.Map.empty
@@ -22,9 +22,9 @@
 -- getStringValue value = case value of
 --   Nothing -> mkName "Error"
 --   Just (s, _) -> s
--- 
--- spec :: Spec
--- spec =
+ 
+ spec :: Spec
+ spec = it "Flex" $ 1 `shouldBe` 1
 --   describe "Codegen utilisation" $ do
 --     it "Create fresh name" $ do
 --       let value = runFreshCodegen freshCodegenState

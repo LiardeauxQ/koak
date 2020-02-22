@@ -1,4 +1,5 @@
-module DeadCodePass where
+module DeadCodeSpec where
+
 import           TypeInference
 import           AST
 import           Test.Hspec
