@@ -19,10 +19,5 @@ handleFile :: String -> IO ()
 handleFile filename = do
   file <- openFile filename ReadMode
   content <- hGetContents file
-  putStrLn $ inputParsingExpression content
-  startKoak content
+  startKoak content $ filename ++ ".ir"
 
---main = interact inputParsingExpression
-
-inputParsingExpression :: String -> String
-inputParsingExpression input = show $ runParser koak input

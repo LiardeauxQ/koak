@@ -1,3 +1,5 @@
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE TupleSections #-}
 module Codegen where
 
 import AST
@@ -13,10 +15,13 @@ import Debug.Trace
 
 import LLVM.AST
 import LLVM.AST.Global
+import LLVM.AST.Typed
 import qualified LLVM.AST.Instruction as I
 import qualified LLVM.AST.Constant as C
 import qualified LLVM.AST.Float as F
 import qualified LLVM.AST.CallingConvention as CC
+import qualified LLVM.AST.Attribute as A
+import LLVM.AST.AddrSpace
 import LLVM.IRBuilder.Monad (emitInstr)
 import LLVM.AST.FloatingPointPredicate
 
@@ -37,6 +42,21 @@ initNewBlock name = CodegenBlock
   , term = Nothing
   }
 
+createNextBlock :: String -> CodegenState -> CodegenState
+createNextBlock blockName (CodegenState name tab names count blocks current) = CodegenState
+  { stateName = name
+  , symTab = tab
+  , names = names
+  , count = count
+  , blocks = case current of
+    Just value -> blocks ++ [value]
+    Nothing -> blocks
+  , currentBlock = Just $ initNewBlock blockName }
+
+
+getCurrentBlockName :: CodegenBlock -> LLVM.AST.Name
+getCurrentBlockName (CodegenBlock name _ _) = name
+
 getBlockInstructions :: CodegenBlock -> [Named Instruction]
 getBlockInstructions (CodegenBlock _ instructions _) = instructions
 
@@ -53,6 +73,7 @@ modifyBlockTerm (CodegenBlock name instructions _) newTerm = CodegenBlock
   , instructions = instructions
   , term = Just newTerm
   }
+
 
 endCurrentBlock :: CodegenState -> CodegenState
 endCurrentBlock (CodegenState name tab names count blocks currentBlock) = CodegenState
@@ -74,14 +95,24 @@ convertToBasicBlock (CodegenBlock name instructions term) = case term of
 data CodegenState = CodegenState
   { stateName   :: LLVM.AST.Name
   , symTab :: SymbolTable
-  , names :: Map String Int
-  , count :: Int
+  , names :: Map String Word
+  , count :: Word
   , blocks :: [CodegenBlock]
   , currentBlock :: Maybe CodegenBlock
   } deriving (Show, Eq)
 
 emptyCodegenState :: CodegenState
 emptyCodegenState = CodegenState (mkName "main") [] Data.Map.empty 0 [] Nothing
+
+cleanCodegenState :: CodegenState -> CodegenState
+cleanCodegenState (CodegenState name symtab names count _ _) = CodegenState
+  { stateName = name
+  , symTab = symtab
+  , names = names
+  , count = count
+  , blocks = []
+  , currentBlock = Nothing
+  }
 
 newtype CodegenT m a = CodegenT { unCodegenT :: StateT CodegenState m a }
 
@@ -110,14 +141,18 @@ runCodegenT = runState . unCodegenT
 getSymbolTable :: CodegenState -> SymbolTable
 getSymbolTable (CodegenState _ symTab _ _ _ _) = symTab
 
+getLastSymbolTableOperand :: SymbolTable -> Operand
+getLastSymbolTableOperand symtab = operand
+  where (name, operand) = last symtab
+
 runMaybe :: Maybe a -> a
 runMaybe = fromMaybe $ error "Invalid value of maybe"
 
-fresh :: Codegen LLVM.AST.Name
+fresh :: Codegen Word
 fresh = do
   i <- CodegenT $ gets count
   CodegenT $ modify $ \s -> s { count = i + 1}
-  return $ mkName $ show $ i + 1
+  return $ i + 1
 
 freshSuggestedName :: String -> Codegen LLVM.AST.Name
 freshSuggestedName sug = do
@@ -125,17 +160,22 @@ freshSuggestedName sug = do
   i <- CodegenT $ gets count
   names <- CodegenT $ gets names
   CodegenT $ modify $ \s -> s { names = Data.Map.insert sug i names }
-  return newName
+  return $ UnName newName
 
 instr :: Type -> Instruction -> Codegen Operand
 instr ret i = do
   current <- CodegenT $ gets currentBlock
-  name <- fresh
+  ref <- fresh
+  let name = UnName ref
   case current of
-    Just block ->
-      CodegenT $ modify $ \s -> s { currentBlock = Just $ trace (show name ++ show i) $ addBlockInstruction block (name := i)}
+    Just block -> do
+      case ret of
+        VoidType ->
+          CodegenT $ modify $ \s -> s { currentBlock = Just $ addBlockInstruction block (Do i)}
+        _ ->
+          CodegenT $ modify $ \s -> s { currentBlock = Just $ addBlockInstruction block (name := i)}
+      return $ LocalReference ret name
     Nothing -> error "Cannot create block for instruction"
-  return $ LocalReference ret name
 
 terminator :: Named Terminator -> Codegen (Named Terminator)
 terminator value = do
@@ -164,8 +204,8 @@ convertVariablesDef defs = [(name, toType type') | (VariableDef name (Just type'
 variableDefToOperand :: VariableDef -> Codegen Operand
 variableDefToOperand (VariableDef name (Just type')) = do
   symTab <- CodegenT $ gets symTab
-  ptr <- toAllocaOperand
-  toStoreOperand ptr $ LocalReference double (mkName name)
+  ptr <- toAlloca
+  toStore ptr $ LocalReference double (mkName name)
   CodegenT $ modify $ \s -> s {symTab = symTab ++ [(name, ptr)]}
   return ptr
 
@@ -180,26 +220,85 @@ toType TVoid = VoidType
 double = FloatingPointType DoubleFP
 
 intSize = 4
+zero = ConstantOperand $ C.Float $ F.Double 0.0
+one = ConstantOperand $ C.Float $ F.Double 1.0
+
+
+handleOptionalElse :: Maybe KExprs -> Codegen (Maybe Operand)
+handleOptionalElse exprs = case exprs of
+  Just value -> do
+    CodegenT $ modify $ \s -> createNextBlock "else.block" s
+    op <- generateExpressions value
+    toBr "if.block"
+    return $ Just op
+  Nothing -> return Nothing
+
 
 generateExpressions :: KExprs -> Codegen Operand
-generateExpressions (For expr1 expr2 expr3 expr4 expr5 exprs) = trace "for" Control.Applicative.empty
-generateExpressions (If expr exprs1 exprs2) = trace "if" Control.Applicative.empty
-generateExpressions (While expr exprs) = trace "while" Control.Applicative.empty
-generateExpressions (Expression exprs) = trace "do" $ do
-  CodegenT $ modify $ \s -> s { currentBlock = Just $ initNewBlock "entry" }
-  --retVal <- trace (show exprs) $ forM exprs generateExpression
-  --loaded <- toLoadOperand $ last retVal
-  addr <- toAllocaOperand
-  --toStoreOperand addr $ ConstantOperand $ C.Float $ F.Double 1.0
-  instr double $ toMul (ConstantOperand $ C.Float $ F.Double 1.0) $ (ConstantOperand $ C.Float $ F.Double 1.0)
-  --loaded <- toLoadOperand addr
-  ret <- toRetOperand $ LocalReference double $ mkName "1" -- Find a better way to set terminator
-  CodegenT $ modify endCurrentBlock
-  return $ ConstantOperand $ C.Float $ F.Double 1.0--last retVal
+generateExpressions (For expr1 expr2 expr3 expr4 expr5 exprs) = do
+  current <- CodegenT $ gets currentBlock
+  CodegenT $ modify $ \s -> s {currentBlock = Just $ fromMaybe (initNewBlock "entry") current}
+  counter <- generateExpression expr1
+  initialValue <- generateExpression expr2
+  toStore counter initialValue
+  toBr "for.block"
+
+  CodegenT $ modify $ \s -> createNextBlock "for.block" s
+  generateExpressions exprs
+  incValue <- generateExpression expr5
+  loadedCounter <- toLoad counter
+
+  nextVar <- instr double $ toAdd loadedCounter incValue
+
+  toStore counter nextVar
+
+  cmp <- generateExpression $ BinaryOp "<" expr3 expr4
+  toCondBr cmp "for.block" "afterfor.block"
+
+  CodegenT $ modify $ \s -> createNextBlock "afterfor.block" s
+  toRet zero
+  return zero
+generateExpressions (If expr exprs1 exprs2) = do
+  current <- CodegenT $ gets currentBlock
+  CodegenT $ modify $ \s -> s {currentBlock = Just $ fromMaybe (initNewBlock "entry") current}
+  cond <- generateExpression expr
+
+  toCondBr cond "then.block" "else.block"
+  CodegenT $ modify $ \s -> createNextBlock "then.block" s
+  thenOp <- generateExpressions exprs1
+
+  toBr "if.block"
+  optionalElse <- handleOptionalElse exprs2
+  CodegenT $ modify $ \s -> createNextBlock "if.block" s
+  res <- case optionalElse of
+          Just value -> toPhi double [(thenOp, mkName "then.block"), (value, mkName "else.block")]
+          Nothing -> toPhi double [(thenOp, mkName "then.block")]
+  toRet res
+  return res
+generateExpressions (While expr exprs) = do
+  current <- CodegenT $ gets currentBlock
+  CodegenT $ modify $ \s -> s {currentBlock = Just $ fromMaybe (initNewBlock "entry") current}
+  toBr "while.block"
+
+  CodegenT $ modify $ \s -> createNextBlock "while.block" s
+  generateExpressions exprs
+  cmp <- generateExpression expr
+  toCondBr cmp "while.block" "afterwhile.block"
+
+  CodegenT $ modify $ \s -> createNextBlock "afterwhile.block" s
+  toRet zero
+  return zero
+generateExpressions (Expression exprs) = do
+  current <- CodegenT $ gets currentBlock
+  CodegenT $ modify $ \s -> s {currentBlock = Just $ fromMaybe (initNewBlock "entry") current}
+  retVal <- forM exprs generateExpression
+  symtab <- CodegenT $ gets symTab
+  toRet $ last retVal
+  return $ last retVal
 
 generateExpression :: KExpr -> Codegen Operand
-generateExpression (Int value) = trace (show value) $ toNumOperand $ fromInteger value
-generateExpression (Float value) = trace (show value) $ toNumOperand value
+generateExpression (Int value) = toNumOperand $ fromInteger value
+generateExpression (Float value) = toNumOperand value
 generateExpression (BinaryOp name lhs rhs) = case name of
   "*"  -> mathOperation lhs rhs toMul
   "/"  -> mathOperation lhs rhs toDiv
@@ -209,15 +308,25 @@ generateExpression (BinaryOp name lhs rhs) = case name of
   ">"  -> cmpOperation  lhs rhs OGT
   "==" -> cmpOperation  lhs rhs OEQ
   "!=" -> cmpOperation  lhs rhs ONE
-  "="  -> generateExpression rhs--trace ("assign" ++ show lhs ++ show rhs) $ assignOperation lhs rhs
-  _    -> Control.Applicative.empty
+  "="  -> assignOperation lhs rhs
+  _    -> trace "Error with BinaryOp" Control.Applicative.empty
 generateExpression (UnaryOp name expr) = case name of
-  "-"  -> Control.Applicative.empty
-  "!"  -> Control.Applicative.empty
-  _    -> Control.Applicative.empty
-generateExpression (Identifier name) = trace (name ++ "id") $ findOperandForIdentifier name
+  "-"  -> trace "Error -" Control.Applicative.empty
+  "!"  -> trace "Error !" Control.Applicative.empty
+  _    -> trace "Error with UnaryOp" Control.Applicative.empty
+generateExpression (Identifier name) = getPreLoadedOperandForIdentifier name
 generateExpression (AST.Call expr exprs) = callOperation expr exprs toCall
-generateExpression (Primary expr) = Control.Applicative.empty
+generateExpression (Primary expr) = trace "Error prim" Control.Applicative.empty
+
+generateAddrIdentifier :: KExpr -> Codegen (Maybe Operand)
+generateAddrIdentifier (Identifier name) = do
+  op <- getAddrOperandForIdentifier name
+  return $ Just op
+generateAddrIdentifier _ = return Nothing
+
+getNameFromIdentifier :: KExpr -> Maybe String
+getNameFromIdentifier (Identifier name) = Just name
+getNameFromIdentifier _ = Nothing
 
 toNumOperand :: Double -> Codegen Operand
 toNumOperand value = return $ ConstantOperand $ C.Float $ F.Double value
@@ -246,23 +355,40 @@ toMul lhs rhs = FMul noFastMathFlags lhs rhs []
 toDiv :: Operand -> Operand -> Instruction
 toDiv lhs rhs = FDiv noFastMathFlags lhs rhs []
 
+
 cmpOperation :: KExpr -> KExpr -> FloatingPointPredicate -> Codegen Operand
 cmpOperation lhs rhs op = do
   first <- generateExpression lhs
   second <- generateExpression rhs
   instr double (FCmp op first second [])
 
-toCall :: Operand -> [Operand] -> Instruction
-toCall fn args = I.Call Nothing CC.C [] (Right fn) [] [] []
 
-generateListExpr :: [KExpr] -> Codegen [Operand]
-generateListExpr expressions = forM expressions generateExpression
+toArgs :: [Operand] -> [(Operand, [A.ParameterAttribute])]
+toArgs = Prelude.map (, [])
+
+
+toCall :: Operand -> [Operand] -> Instruction
+toCall fn args = I.Call Nothing CC.C [] (Right fn) (toArgs args) [] []
+
+iterateN :: Int -> a -> [a]
+iterateN 0 _ = []
+iterateN n value = [value] ++ iterateN (n - 1) value
+
+getFunctionType :: Type -> Int -> Type
+getFunctionType ret nb = PointerType { pointerReferent = FunctionType { resultType = ret, argumentTypes = iterateN nb ret, isVarArg = Prelude.False }, pointerAddrSpace = AddrSpace 0}
+
+linkToFunction :: AST.Name -> Int -> Operand
+linkToFunction name nb = extern (getFunctionType double nb) $ mkName name
 
 callOperation :: KExpr -> [KExpr] -> (Operand -> [Operand] -> Instruction) -> Codegen Operand
 callOperation fn args op = do
-  fnCodegen <- generateExpression fn
-  argsCodegen <- generateListExpr args
-  instr double $ toCall fnCodegen argsCodegen
+  let fnName = getNameFromIdentifier fn
+  argsCodegen <- forM args \a -> do
+    generateExpression a
+  case fnName of
+    Just name -> instr double $ toCall (linkToFunction name $ length argsCodegen) argsCodegen
+    Nothing -> error "Invalid function name"
+
 
 findOperandInSymtab :: String -> [(String, Operand)] -> Maybe Operand
 findOperandInSymtab _ [] = Nothing
@@ -270,41 +396,79 @@ findOperandInSymtab value ((name, op):xs)
   | name == value = Just op
   | otherwise = findOperandInSymtab value xs
 
-findOperandForIdentifier :: AST.Name -> Codegen Operand
-findOperandForIdentifier name = do
+
+addToSymtab :: AST.Name -> Codegen Operand
+addToSymtab name = do
+  newName <- freshSuggestedName name
+  addr <- toAlloca
+  symTab <- CodegenT $ gets symTab
+  CodegenT $ modify $ \s -> ( s { symTab = symTab ++ [(name, addr)]} )
+  return addr
+
+getPreLoadedOperandForIdentifier :: AST.Name -> Codegen Operand
+getPreLoadedOperandForIdentifier name = do
+  symbols <- CodegenT $ gets symTab
+  case findOperandInSymtab name symbols of
+    Just addr -> toLoad addr
+    Nothing -> addToSymtab name
+
+
+getAddrOperandForIdentifier :: AST.Name -> Codegen Operand
+getAddrOperandForIdentifier name = do
   symbols <- CodegenT $ gets symTab
   case findOperandInSymtab name symbols of
     Just addr -> return addr
-    Nothing -> do
-      newName <- freshSuggestedName name
-      addr <- toAllocaOperand
-      symTab <- CodegenT $ gets symTab
-      CodegenT $ modify $ \s -> ( s { symTab = symTab ++ [(name, addr)]} )
-      --toStoreOperand addr $ LocalReference double newName
-      return addr
+    Nothing -> addToSymtab name
 
-toAllocaOperand :: Codegen Operand
-toAllocaOperand = instr double $ I.Alloca double Nothing 0 []
 
-toLoadOperand :: Operand -> Codegen Operand
-toLoadOperand ptr = instr double $ I.Load Prelude.False ptr Nothing 0 []
+toAlloca :: Codegen Operand
+toAlloca = instr double $ I.Alloca double Nothing 0 []
 
-toStoreOperand :: Operand -> Operand -> Codegen Operand
-toStoreOperand ptr value = instr double $ I.Store Prelude.False ptr value Nothing 0 []
 
-toRetOperand :: Operand -> Codegen (Named Terminator)
-toRetOperand value = terminator $ Do $ Ret (Just value) []
+toLoad :: Operand -> Codegen Operand
+toLoad ptr = instr double $ I.Load Prelude.False ptr Nothing 0 []
+
+
+toStore :: Operand -> Operand -> Codegen Operand
+toStore ptr value = do
+  instr VoidType $ I.Store Prelude.False ptr value Nothing 0 []
+  return zero
+
+
+toRet :: Operand -> Codegen (Named Terminator)
+toRet value = terminator $ Do $ Ret (Just value) []
+
+
+toBr :: AST.Name -> Codegen (Named Terminator)
+toBr name = terminator $ Do $ Br (mkName name) []
+
+
+toCondBr :: Operand -> AST.Name -> AST.Name -> Codegen (Named Terminator)
+toCondBr cond trueId falseId = terminator $ Do $ CondBr cond (mkName trueId) (mkName falseId) []
+
+
+toPhi :: Type -> [(Operand, LLVM.AST.Name)] -> Codegen Operand
+toPhi type' values = instr type' $ I.Phi type' values []
+
+
+extern :: Type -> LLVM.AST.Name -> Operand
+extern type' name = ConstantOperand $ C.GlobalReference type' name
+
 
 assignOperation :: KExpr -> KExpr -> Codegen Operand
 assignOperation lhs rhs = do
-  first <- trace ("first" ++ show lhs) $ generateExpression lhs
-  second <- trace ("second" ++ show rhs) $ generateExpression rhs
-  loaded <- toLoadOperand second
-  trace "store" $ toStoreOperand first loaded
-  trace "return first" $ return first
+  first <- generateAddrIdentifier lhs
+  second <- generateExpression rhs
+  case first of
+    Just value -> toStore value second
+    Nothing -> error "It's not an identifier"
+  return zero
 
-isOperandAPointer :: Operand -> Bool
-isOperandAPointer (LocalReference (PointerType _ _) _) = trace "pointer" Prelude.True
-isOperandAPointer (LocalReference _ _) = Prelude.False
-isOperandAPointer (ConstantOperand _) = Prelude.False
-isOperandAPointer (MetadataOperand _) = Prelude.False
+getStringFromName :: LLVM.AST.Name -> Maybe String
+getStringFromName (Name value) = Just $ show value
+getStringFromName (UnName value) = Just $ show value
+
+getOperandName :: Operand -> Maybe LLVM.AST.Name
+getOperandName (LocalReference _ name) = Just name
+getOperandName (ConstantOperand _) = Nothing
+getOperandName (MetadataOperand _) = Nothing
