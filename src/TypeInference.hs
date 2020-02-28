@@ -14,7 +14,7 @@ type Error = String
 type Context = (Map.Map String (Maybe (Either String KType)))
 
 infereType :: [KDefs] -> Either Error [KDefs]
-infereType e = unify e . collectConstraints e . annotate $ e
+infereType e = trace "Start " (unify e . collectConstraints e . annotate $ e)
 
 --- Annotation
 
@@ -78,8 +78,19 @@ getIdentifier expr = case expr of
 --- Collect constraints
 
 collectConstraints :: [KDefs] -> Context -> Context
-collectConstraints expr ctx = traceMap ctx ctx
+collectConstraints expr ctx =  trace ("collectConstraints  "))  (traceMap ctx ctx)
 
+
+checkExistingElemCtx :: String -> Context -> Bool
+checkExistingElemCtx name ctx
+  | show (Map.lookup name ctx) == "Nothing" = False
+  | otherwise = True
+
+addElem :: String -> Context -> Context
+
+
+
+---(Map.lookup var ctx)
 --- Unify
 
 unify :: [KDefs] -> Context -> Either Error [KDefs]
