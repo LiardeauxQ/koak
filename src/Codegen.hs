@@ -297,7 +297,6 @@ generateExpressions (Expression exprs) = do
   retVal <- forM exprs generateExpression
   symtab <- CodegenT $ gets symTab
   toRet $ last retVal
-  tmp <- CodegenT $ gets currentBlock
   return $ last retVal
 
 generateExpression :: KExpr -> Codegen Operand
