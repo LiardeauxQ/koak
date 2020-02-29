@@ -266,13 +266,16 @@ generateExpressions (If expr exprs1 exprs2) = do
   toCondBr cond "then.block" "else.block"
   CodegenT $ modify $ \s -> createNextBlock "then.block" s
   thenOp <- generateExpressions exprs1
-
   toBr "if.block"
-  optionalElse <- handleOptionalElse exprs2
+
+  CodegenT $ modify $ \s -> createNextBlock "else.block" s
+  elseOp <- case exprs2 of
+              Just value -> generateExpressions value
+              Nothing -> return zero
+  toBr "if.block"
+
   CodegenT $ modify $ \s -> createNextBlock "if.block" s
-  res <- case optionalElse of
-          Just value -> toPhi double [(thenOp, mkName "then.block"), (value, mkName "else.block")]
-          Nothing -> toPhi double [(thenOp, mkName "then.block")]
+  res <- toPhi double [(thenOp, mkName "then.block"), (elseOp, mkName "else.block")]
   toRet res
   return res
 generateExpressions (While expr exprs) = do
@@ -294,6 +297,7 @@ generateExpressions (Expression exprs) = do
   retVal <- forM exprs generateExpression
   symtab <- CodegenT $ gets symTab
   toRet $ last retVal
+  tmp <- CodegenT $ gets currentBlock
   return $ last retVal
 
 generateExpression :: KExpr -> Codegen Operand
@@ -316,7 +320,7 @@ generateExpression (UnaryOp name expr) = case name of
   _    -> trace "Error with UnaryOp" Control.Applicative.empty
 generateExpression (Identifier name) = getPreLoadedOperandForIdentifier name
 generateExpression (AST.Call expr exprs) = callOperation expr exprs toCall
-generateExpression (Primary expr) = trace "Error prim" Control.Applicative.empty
+generateExpression (Primary expr) = generateExpressions expr
 
 generateAddrIdentifier :: KExpr -> Codegen (Maybe Operand)
 generateAddrIdentifier (Identifier name) = do
