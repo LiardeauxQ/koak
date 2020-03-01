@@ -97,7 +97,7 @@ parcourKdef kdefs offset ctx
 
 collectConstraintsKDefs :: KDefs -> Context -> Context
 collectConstraintsKDefs kdef ctx = case kdef of
-    Def name vars ty expr -> trace ("Def: " ++ show kdef) (parcourCtx (Map.toList ctx) ctx 0 (show kdef))
+    Def name vars ty expr -> trace ("Def: " ++ show kdef) ( ctx)
     Expressions kexprs     -> (ctx)
 
 
@@ -126,10 +126,7 @@ parcourVdef vdefs offset ctx
   | (length vdefs) <= offset = ctx
   | otherwise = trace (show (vdefs !! offset)) (parcourVdef vdefs (offset + 1) (ctx))
 
-parcourCtx :: [a] -> Context -> Int -> String -> Context
-parcourCtx ctx context offset str
-  | (length ctx) <= offset = context
-  | otherwise = trace (show (ctx !! offset)) (parcourCtx ctx context (offset + 1) (str))
+
 
 
 replaceElem str ctx elem  = trace ("elem" ++ show elem) (ctx)
