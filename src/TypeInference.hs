@@ -103,6 +103,14 @@ defCollect :: [VariableDef] -> Context -> Context
 defCollect vars ctx = trace ("Vars: " ++ show vars) (ctx)
 
 
+parcourVdef :: [VariableDef] -> Int -> Context -> Context
+parcourVdef vdefs offset ctx
+  | (length vdefs) <= offset = ctx
+  | otherwise = trace (show (vdefs !! offset)) (parcourVdef vdefs (offset + 1) (ctx))
+
+
+---addInCtx :: VariableDef -> Context -> Context
+---addInCtx = 
 
 
 ---(Map.lookup var ctx)
