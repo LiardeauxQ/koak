@@ -7,6 +7,8 @@ import           Control.Exception
 import           Debug.Trace
 import           State
 import           AST
+import           Data.List
+
 import qualified Data.Map                      as Map
 
 type Error = String
@@ -14,7 +16,7 @@ type Error = String
 type Context = (Map.Map String (Maybe (Either String KType)))
 
 infereType :: [KDefs] -> Either Error [KDefs]
-infereType e = unify e . collectConstraints e . annotate $ e
+infereType e = trace "Start " (unify e . collectConstraints e . annotate $ e)
 
 --- Annotation
 
@@ -78,8 +80,66 @@ getIdentifier expr = case expr of
 --- Collect constraints
 
 collectConstraints :: [KDefs] -> Context -> Context
-collectConstraints expr ctx = traceMap ctx ctx
+collectConstraints expr ctx =  trace ("collectConstraints  ")  (parcourKdef expr 0 ctx)
 
+
+checkExistingElemCtx :: String -> Context -> Bool
+checkExistingElemCtx name ctx
+  | show (Map.lookup name ctx) == "Nothing" = False
+  | otherwise = True
+
+
+parcourKdef ::  [KDefs] -> Int -> Context -> Context
+parcourKdef kdefs offset ctx
+  | (length kdefs) <= offset = ctx
+  | otherwise = trace (show (kdefs !! offset)) (parcourKdef kdefs (offset + 1) (collectConstraintsKDefs (kdefs !! offset) ctx))
+
+
+collectConstraintsKDefs :: KDefs -> Context -> Context
+collectConstraintsKDefs kdef ctx = case kdef of
+    Def name vars ty expr -> trace ("Def: " ++ show kdef) ( ctx)
+    Expressions kexprs     -> (ctx)
+
+
+kexprCollect :: KExprs -> Context -> Context
+kexprCollect expr ctx = trace ("----EXPR: " ++ show expr ++ "-----------") (ctx)
+
+
+
+collectKExprs :: KExprs -> Context -> Context
+collectKExprs kexprs ctx = case kexprs of
+    For var1 val1 cond1 cond2 step exprs -> ctx
+    If cond action elseAction -> ctx
+    While cond action   ->  ctx
+    Expression listExpr -> foldr collectKExpr ctx listExpr
+
+
+collectKExpr :: KExpr -> Context -> Context
+collectKExpr kexpr ctx = trace ("KEXPRRRRRRRRR" ++ show kexpr) (ctx)
+
+defCollect :: [VariableDef] -> Context -> Context
+defCollect vars ctx = trace ("Vars: " ++ show vars) (ctx)
+
+
+parcourVdef :: [VariableDef] -> Int -> Context -> Context
+parcourVdef vdefs offset ctx
+  | (length vdefs) <= offset = ctx
+  | otherwise = trace (show (vdefs !! offset)) (parcourVdef vdefs (offset + 1) (ctx))
+
+
+
+
+replaceElem str ctx elem  = trace ("elem" ++ show elem) (ctx)
+
+
+
+finsSubStr :: String -> String -> Maybe Int
+finsSubStr _ []  = Nothing
+finsSubStr sub str = case isPrefixOf sub str of
+  False -> fmap (+1) $ finsSubStr sub (tail str)
+  True  -> Just 0
+
+---(Map.lookup var ctx)
 --- Unify
 
 unify :: [KDefs] -> Context -> Either Error [KDefs]
