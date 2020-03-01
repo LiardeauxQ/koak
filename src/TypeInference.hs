@@ -95,13 +95,25 @@ parcourKdef kdefs offset ctx
 
 collectConstraintsKDefs :: KDefs -> Context -> Context
 collectConstraintsKDefs kdef ctx = case kdef of
-    Def name vars ty expr -> trace ("Def: " ++ show kdef) (kexprCollect expr (defCollect vars ctx))
+    Def name vars ty expr -> trace ("Def: " ++ show kdef) (collectKExprs expr (defCollect vars ctx))
     Expressions kexprs     -> trace ("Expr: " ++ show kdef) (ctx)
 
 
 kexprCollect :: KExprs -> Context -> Context
 kexprCollect expr ctx = trace ("----EXPR: " ++ show expr ++ "-----------") (ctx)
 
+
+
+collectKExprs :: KExprs -> Context -> Context
+collectKExprs kexprs ctx = case kexprs of
+    For var1 val1 cond1 cond2 step exprs -> ctx
+    If cond action elseAction -> ctx
+    While cond action   ->  ctx
+    Expression listExpr -> foldr collectKExpr ctx listExpr
+
+
+collectKExpr :: KExpr -> Context -> Context
+collectKExpr kexpr ctx = trace ("KEXPRRRRRRRRR" ++ show kexpr) (ctx)
 
 defCollect :: [VariableDef] -> Context -> Context
 defCollect vars ctx = trace ("Vars: " ++ show vars) (ctx)
