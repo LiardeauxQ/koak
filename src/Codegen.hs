@@ -314,7 +314,7 @@ generateExpression (BinaryOp name lhs rhs) = case name of
   "="  -> assignOperation lhs rhs
   _    -> trace "Error with BinaryOp" Control.Applicative.empty
 generateExpression (UnaryOp name expr) = case name of
-  "-"  -> trace "Error -" Control.Applicative.empty
+  "-"  -> generateExpression $ BinaryOp "*" (Float (-1.0)) expr
   "!"  -> trace "Error !" Control.Applicative.empty
   _    -> trace "Error with UnaryOp" Control.Applicative.empty
 generateExpression (Identifier name) = getPreLoadedOperandForIdentifier name

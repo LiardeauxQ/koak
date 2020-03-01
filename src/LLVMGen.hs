@@ -6,6 +6,7 @@ import           Data.String
 import           Parser
 import           KParser
 import           AST
+import           DeadCode
 import           LLVM.AST
 import           Codegen
 import           Debug.Trace
@@ -175,7 +176,7 @@ startKoak content filename = do
       { mainModule = mod
       , stackBlocks = []
       , codegenState = emptyCodegenState
-      } $ forM defs generateDef
+      } $ forM (removeDeadCode  defs) generateDef
 
 
 toLLVMCode :: File -> LLVMState -> LLVM a -> IO ()
