@@ -78,7 +78,7 @@ getIdentifier expr = case expr of
 --- Collect constraints
 
 collectConstraints :: [KDefs] -> Context -> Context
-collectConstraints expr ctx =  trace ("collectConstraints  "))  (traceMap ctx ctx)
+collectConstraints expr ctx =  trace ("collectConstraints  ")  (parcourKdef expr 0 ctx)
 
 
 checkExistingElemCtx :: String -> Context -> Bool
@@ -86,7 +86,18 @@ checkExistingElemCtx name ctx
   | show (Map.lookup name ctx) == "Nothing" = False
   | otherwise = True
 
-addElem :: String -> Context -> Context
+
+parcourKdef ::  [KDefs] -> Int -> Context -> Context
+parcourKdef kdefs offset ctx
+  | (length kdefs) <= offset = ctx
+  | otherwise = trace (show (kdefs !! offset)) (parcourKdef kdefs (offset + 1) (collectConstraintsKDefs (kdefs !! offset) ctx))
+
+
+collectConstraintsKDefs :: KDefs -> Context -> Context
+collectConstraintsKDefs kdef ctx = case kdef of
+    Def name vars ty expr -> trace ("Def: " ++ show kdef) (ctx)
+    Expressions kexprs     -> trace ("Expr: " ++ show kdef) (ctx)
+
 
 
 
