@@ -7,6 +7,8 @@ import           Control.Exception
 import           Debug.Trace
 import           State
 import           AST
+import           Data.List
+
 import qualified Data.Map                      as Map
 
 type Error = String
@@ -96,7 +98,7 @@ parcourKdef kdefs offset ctx
 collectConstraintsKDefs :: KDefs -> Context -> Context
 collectConstraintsKDefs kdef ctx = case kdef of
     Def name vars ty expr -> trace ("Def: " ++ show kdef) (collectKExprs expr (defCollect vars ctx))
-    Expressions kexprs     -> trace ("Expr: " ++ show kdef) (ctx)
+    Expressions kexprs     -> (ctx)
 
 
 kexprCollect :: KExprs -> Context -> Context
@@ -125,9 +127,12 @@ parcourVdef vdefs offset ctx
   | otherwise = trace (show (vdefs !! offset)) (parcourVdef vdefs (offset + 1) (ctx))
 
 
----addInCtx :: VariableDef -> Context -> Context
----addInCtx = 
 
+finsSubStr :: String -> String -> Maybe Int
+finsSubStr _ []  = Nothing
+finsSubStr sub str = case isPrefixOf sub str of
+  False -> fmap (+1) $ substringP sub (tail str)
+  True  -> Just 0
 
 ---(Map.lookup var ctx)
 --- Unify
